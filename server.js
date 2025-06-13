@@ -20,7 +20,7 @@ const proxyCache = new NodeCache({ stdTTL: 600, checkperiod: 60 });
 const resourceCache = new NodeCache({ stdTTL: 3600, checkperiod: 300 });
 
 // 炮灰域名配置
-const CANNON_FODDER_DOMAIN = process.env.CANNON_FODDER_DOMAIN || '*.4is.cc'; // 替换为您的域名
+const CANNON_FODDER_DOMAIN = process.env.CANNON_FODDER_DOMAIN || '4is.cc'; // 替换为您的域名，不要包含*或子域名
 
 // 启用CORS
 app.use(cors());
@@ -523,6 +523,10 @@ app.get('/proxy', async (req, res) => {
     return res.status(400).json({ error: '请提供目标URL' });
   }
 
+  // 生成随机子域名
+  const randomPrefix = Math.random().toString(36).substring(2, 10);
+  const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
+  
   try {
     // 解析目标URL
     const parsedUrl = new URL(targetUrl);
@@ -551,7 +555,11 @@ app.get('/proxy', async (req, res) => {
           protocol: protocol
         };
       }
+      console.log(`使用代理: ${protocol}://${proxyHost}:${proxyPort}`);
     }
+
+    console.log(`请求目标URL: ${targetUrl}`);
+    console.log(`使用炮灰域名: ${cannonFodderHost}`);
 
     // 发送请求
     const response = await axios({
@@ -567,43 +575,126 @@ app.get('/proxy', async (req, res) => {
     if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
       let html = response.data;
       
-      // 替换所有域名引用为炮灰域名（如果配置了炮灰域名）
-      if (CANNON_FODDER_DOMAIN && CANNON_FODDER_DOMAIN !== 'your-domain.com') {
-        const $ = cheerio.load(html);
-        
-        // 替换所有链接
-        $('a').each((i, el) => {
-          const href = $(el).attr('href');
-          if (href && href.startsWith('http')) {
-            const randomPrefix = Math.random().toString(36).substring(7);
-            $(el).attr('href', href.replace(parsedUrl.host, `${randomPrefix}.${CANNON_FODDER_DOMAIN}`));
-          }
-        });
-        
-        // 替换所有资源链接
-        $('img, script, link').each((i, el) => {
-          const src = $(el).attr('src') || $(el).attr('href');
-          if (src && src.startsWith('http')) {
-            const randomPrefix = Math.random().toString(36).substring(7);
-            if ($(el).attr('src')) {
-              $(el).attr('src', src.replace(parsedUrl.host, `${randomPrefix}.${CANNON_FODDER_DOMAIN}`));
-            } else {
-              $(el).attr('href', src.replace(parsedUrl.host, `${randomPrefix}.${CANNON_FODDER_DOMAIN}`));
+      // 替换所有域名引用为炮灰域名
+      const $ = cheerio.load(html);
+      
+      // 替换所有链接
+      $('a').each((i, el) => {
+        const href = $(el).attr('href');
+        if (href) {
+          try {
+            // 处理相对URL和绝对URL
+            let absoluteUrl = href;
+            if (!href.startsWith('http') && !href.startsWith('//')) {
+              // 相对URL，转换为绝对URL
+              if (href.startsWith('/')) {
+                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${href}`;
+              } else {
+                const baseDir = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
+                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${baseDir}${href}`;
+              }
+            } else if (href.startsWith('//')) {
+              // 协议相对URL
+              absoluteUrl = `${parsedUrl.protocol}${href}`;
             }
+            
+            // 将原始域名替换为炮灰域名
+            if (absoluteUrl.includes(parsedUrl.host)) {
+              const newUrl = absoluteUrl.replace(parsedUrl.host, cannonFodderHost);
+              $(el).attr('href', newUrl);
+            }
+          } catch (e) {
+            console.error('处理链接时出错:', e);
           }
-        });
-        
-        html = $.html();
-      }
+        }
+      });
+      
+      // 替换所有资源链接
+      $('img, script, link, iframe, source').each((i, el) => {
+        const src = $(el).attr('src') || $(el).attr('href');
+        if (src) {
+          try {
+            // 处理相对URL和绝对URL
+            let absoluteUrl = src;
+            if (!src.startsWith('http') && !src.startsWith('//')) {
+              // 相对URL，转换为绝对URL
+              if (src.startsWith('/')) {
+                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${src}`;
+              } else {
+                const baseDir = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
+                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${baseDir}${src}`;
+              }
+            } else if (src.startsWith('//')) {
+              // 协议相对URL
+              absoluteUrl = `${parsedUrl.protocol}${src}`;
+            }
+            
+            // 将原始域名替换为炮灰域名
+            if (absoluteUrl.includes(parsedUrl.host)) {
+              const newUrl = absoluteUrl.replace(parsedUrl.host, cannonFodderHost);
+              if ($(el).attr('src')) {
+                $(el).attr('src', newUrl);
+              } else {
+                $(el).attr('href', newUrl);
+              }
+            }
+          } catch (e) {
+            console.error('处理资源链接时出错:', e);
+          }
+        }
+      });
+      
+      // 替换内联样式中的URL
+      $('[style]').each((i, el) => {
+        const style = $(el).attr('style');
+        if (style && style.includes('url(')) {
+          try {
+            const newStyle = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
+              if (url.includes(parsedUrl.host)) {
+                return `url(${url.replace(parsedUrl.host, cannonFodderHost)})`;
+              }
+              return match;
+            });
+            $(el).attr('style', newStyle);
+          } catch (e) {
+            console.error('处理内联样式时出错:', e);
+          }
+        }
+      });
+      
+      // 替换CSS中的URL
+      $('style').each((i, el) => {
+        const css = $(el).html();
+        if (css && css.includes('url(')) {
+          try {
+            const newCss = css.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
+              if (url.includes(parsedUrl.host)) {
+                return `url(${url.replace(parsedUrl.host, cannonFodderHost)})`;
+              }
+              return match;
+            });
+            $(el).html(newCss);
+          } catch (e) {
+            console.error('处理CSS时出错:', e);
+          }
+        }
+      });
+      
+      // 替换base标签
+      $('base').each((i, el) => {
+        const href = $(el).attr('href');
+        if (href && href.includes(parsedUrl.host)) {
+          $(el).attr('href', href.replace(parsedUrl.host, cannonFodderHost));
+        }
+      });
       
       // 如果启用了广告过滤
       if (req.query.removeAds === 'true') {
-        // 实现广告过滤逻辑
-      }
-      
-      // 如果启用了跟踪器移除
-      if (req.query.removeTrackers === 'true') {
-        // 实现跟踪器移除逻辑
+        html = filterContent($.html(), { removeAds: true });
+      } else if (req.query.removeTrackers === 'true') {
+        html = filterContent($.html(), { removeTrackers: true });
+      } else {
+        html = $.html();
       }
       
       res.send(html);
