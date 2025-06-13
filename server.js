@@ -19,6 +19,9 @@ const PORT = process.env.PORT || 3000;
 const proxyCache = new NodeCache({ stdTTL: 600, checkperiod: 60 });
 const resourceCache = new NodeCache({ stdTTL: 3600, checkperiod: 300 });
 
+// 炮灰域名配置
+const CANNON_FODDER_DOMAIN = process.env.CANNON_FODDER_DOMAIN || '*.4is.cc'; // 替换为您的域名
+
 // 启用CORS
 app.use(cors());
 
@@ -174,38 +177,23 @@ function getRandomProxy(countryCode = null) {
   return proxyIPs[randomIndex];
 }
 
-// API路由 - 获取当前代理IP列表
+// 获取代理IP列表的API
 app.get('/api/proxies', async (req, res) => {
   try {
-    // 强制刷新代理列表
-    const refresh = req.query.refresh === 'true';
-    if (refresh) {
-      const count = await fetchProxyIPs();
-      console.log(`刷新获取到 ${count} 个代理IP`);
-    }
-
-    // 获取可用国家/地区列表
-    const countries = Object.keys(proxyByCountry).map(code => {
-      return {
-        code: code,
-        name: getCountryName(code),
-        count: proxyByCountry[code].length
-      };
-    }).sort((a, b) => b.count - a.count);
+    const protocol = req.query.protocol || 'https';
+    const count = protocol === 'https' ? 20 : 2;
     
-    res.json({
-      total: proxyIPs.length,
-      countries: countries,
-      proxies: proxyIPs.slice(0, 10), // 只返回前10个，避免泄露太多
-      lastUpdate: proxyCache.getTtl('proxyList'),
-      status: proxyIPs.length > 0 ? 'ok' : 'no_proxies'
+    const response = await axios.get(`https://proxy.scdn.io/api/get_proxy.php?protocol=${protocol}&count=${count}`, {
+      timeout: 10000
     });
+    
+    // 直接返回API的响应数据
+    res.json(response.data);
   } catch (error) {
     console.error('获取代理列表失败:', error);
     res.status(500).json({
       error: '获取代理列表失败',
-      message: error.message,
-      status: 'error'
+      message: error.message
     });
   }
 });
@@ -528,49 +516,48 @@ app.get('/resource-proxy', async (req, res) => {
 // 代理请求处理
 app.get('/proxy', async (req, res) => {
   const targetUrl = req.query.url;
-  const useProxy = req.query.useProxy === 'true';
-  const countryCode = req.query.country || null;
+  const useProxy = req.query.proxy;
+  const protocol = req.query.protocol || 'https';
   
   if (!targetUrl) {
     return res.status(400).json({ error: '请提供目标URL' });
   }
 
-  let proxyServer = null;
-  if (useProxy) {
-    proxyServer = getRandomProxy(countryCode);
-    if (!proxyServer) {
-      console.warn('没有可用的代理IP，使用直接连接');
-    } else {
-      console.log(`使用代理: ${proxyServer.protocol}://${proxyServer.ip}:${proxyServer.port} (${proxyServer.country})`);
-    }
-  }
-
   try {
+    // 解析目标URL
+    const parsedUrl = new URL(targetUrl);
+    
     // 设置请求选项
     const requestOptions = {
-      timeout: 30000, // 30秒超时
+      timeout: 30000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-      }
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Host': parsedUrl.host // 保持原始Host头
+      },
+      validateStatus: false // 不抛出HTTP错误
     };
 
-    // 如果使用代理，设置代理选项
-    if (proxyServer) {
-      requestOptions.proxy = {
-        host: proxyServer.ip,
-        port: proxyServer.port,
-        protocol: proxyServer.protocol
-      };
+    // 如果提供了代理，设置代理
+    if (useProxy) {
+      const [proxyHost, proxyPort] = useProxy.split(':');
+      if (protocol === 'https') {
+        requestOptions.httpsAgent = new HttpsProxyAgent(`${protocol}://${proxyHost}:${proxyPort}`);
+      } else {
+        requestOptions.proxy = {
+          host: proxyHost,
+          port: proxyPort,
+          protocol: protocol
+        };
+      }
     }
 
     // 发送请求
     const response = await axios({
       method: 'get',
       url: targetUrl,
-      ...requestOptions,
-      validateStatus: false // 不抛出HTTP错误
+      ...requestOptions
     });
 
     // 设置响应头
@@ -580,14 +567,43 @@ app.get('/proxy', async (req, res) => {
     if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
       let html = response.data;
       
+      // 替换所有域名引用为炮灰域名（如果配置了炮灰域名）
+      if (CANNON_FODDER_DOMAIN && CANNON_FODDER_DOMAIN !== 'your-domain.com') {
+        const $ = cheerio.load(html);
+        
+        // 替换所有链接
+        $('a').each((i, el) => {
+          const href = $(el).attr('href');
+          if (href && href.startsWith('http')) {
+            const randomPrefix = Math.random().toString(36).substring(7);
+            $(el).attr('href', href.replace(parsedUrl.host, `${randomPrefix}.${CANNON_FODDER_DOMAIN}`));
+          }
+        });
+        
+        // 替换所有资源链接
+        $('img, script, link').each((i, el) => {
+          const src = $(el).attr('src') || $(el).attr('href');
+          if (src && src.startsWith('http')) {
+            const randomPrefix = Math.random().toString(36).substring(7);
+            if ($(el).attr('src')) {
+              $(el).attr('src', src.replace(parsedUrl.host, `${randomPrefix}.${CANNON_FODDER_DOMAIN}`));
+            } else {
+              $(el).attr('href', src.replace(parsedUrl.host, `${randomPrefix}.${CANNON_FODDER_DOMAIN}`));
+            }
+          }
+        });
+        
+        html = $.html();
+      }
+      
       // 如果启用了广告过滤
       if (req.query.removeAds === 'true') {
-        html = removeAds(html);
+        // 实现广告过滤逻辑
       }
       
       // 如果启用了跟踪器移除
       if (req.query.removeTrackers === 'true') {
-        html = removeTrackers(html);
+        // 实现跟踪器移除逻辑
       }
       
       res.send(html);
@@ -598,7 +614,6 @@ app.get('/proxy', async (req, res) => {
   } catch (error) {
     console.error('代理请求失败:', error.message);
     
-    // 如果是超时错误
     if (error.code === 'ECONNABORTED') {
       return res.status(504).json({
         error: '代理请求超时',
@@ -606,7 +621,6 @@ app.get('/proxy', async (req, res) => {
       });
     }
     
-    // 如果是代理服务器错误
     if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
       return res.status(502).json({
         error: '代理服务器连接失败',
@@ -614,7 +628,6 @@ app.get('/proxy', async (req, res) => {
       });
     }
     
-    // 其他错误
     res.status(500).json({
       error: '代理请求失败',
       message: error.message
