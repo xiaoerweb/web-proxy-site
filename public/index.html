@@ -503,6 +503,148 @@
         .stats-value {
             flex: 1;
         }
+        
+        /* 添加刷新按钮的样式 */
+        .refresh-proxies {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            margin-left: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            display: none; /* 默认隐藏，只有在代理数量为0时显示 */
+        }
+        
+        .refresh-proxies:hover {
+            background-color: #45a049;
+        }
+        
+        .refresh-proxies:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        /* 添加到现有的style标签中 */
+        .url-input-container {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .url-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            transition: border-color 0.3s;
+        }
+        
+        .url-input:focus {
+            border-color: #4CAF50;
+            outline: none;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-button {
+            flex: 1;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .action-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        #loadBtn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        #loadBtn:hover {
+            background-color: #45a049;
+        }
+        
+        #directBtn {
+            background-color: #2196F3;
+            color: white;
+        }
+        
+        #directBtn:hover {
+            background-color: #1e88e5;
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            cursor: pointer;
+        }
+        
+        .form-select:disabled {
+            background-color: #f5f5f5;
+            cursor: not-allowed;
+        }
+        
+        /* 加载中动画 */
+        .fa-spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 错误消息样式 */
+        .error-message {
+            color: #f44336;
+            margin-top: 5px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        /* 添加代理内容样式 */
+        .proxy-content {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            min-height: 200px;
+        }
+        
+        .proxy-content .error-message {
+            color: #f44336;
+            padding: 10px;
+            background-color: #ffebee;
+            border: 1px solid #ffcdd2;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -523,46 +665,49 @@
             </div>
             
             <div class="tab-content" id="web-content">
-                <form class="proxy-form" id="proxyForm">
-                    <div class="form-group">
-                        <label for="url" class="form-label">输入要访问的网址:</label>
-                        <input type="url" id="url" class="form-input" placeholder="https://example.com" required>
-                        <div class="error-message" id="urlError"></div>
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button type="button" id="loadBtn" class="btn btn-primary">
+                <div class="url-input-container">
+                    <input type="text" id="urlInput" class="url-input" 
+                           placeholder="请输入要访问的网址" 
+                           value="https://"
+                           pattern="https?://.+"
+                           title="请输入以http://或https://开头的网址">
+                    <div class="button-group">
+                        <button id="loadBtn" class="action-button">
                             <i class="fas fa-globe"></i> 浏览网页
                         </button>
-                        <button type="button" id="directBtn" class="btn btn-secondary">
+                        <button id="directBtn" class="action-button">
                             <i class="fas fa-external-link-alt"></i> 直接访问
                         </button>
                     </div>
-                </form>
+                </div>
                 
                 <div class="proxy-settings">
-                    <h3 class="settings-title"><i class="fas fa-shield-alt"></i> 代理设置</h3>
-                    <div class="settings-row">
-                        <div class="settings-label">使用IP代理:</div>
-                        <div class="settings-value">
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="useProxy" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
+                    <div class="settings-section">
+                        <div class="settings-header">
+                            <i class="fas fa-shield-alt"></i> 代理设置
                         </div>
-                    </div>
-                    <div class="settings-row">
-                        <div class="settings-label">代理服务器位置:</div>
-                        <div class="settings-value">
-                            <select id="proxyCountry" class="form-input" style="width: auto;">
-                                <option value="">随机 (自动选择)</option>
-                                <!-- 国家列表将通过JavaScript动态填充 -->
-                            </select>
+                        <div class="settings-content">
+                            <div class="setting-item">
+                                <label for="use-proxy">使用IP代理:</label>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="use-proxy" checked>
+                                    <span class="slider round"></span>
+                                </div>
+                            </div>
+                            
+                            <div class="setting-item">
+                                <label for="proxy-location">代理服务器位置:</label>
+                                <select id="proxy-location" class="form-select">
+                                    <option value="random">随机 (自动选择)</option>
+                                    <!-- 国家/地区选项将通过JavaScript动态添加 -->
+                                </select>
+                            </div>
+                            
+                            <div class="setting-item">
+                                <label>可用代理数量: <span class="proxy-count">0</span></label>
+                                <button class="refresh-proxies" id="refreshProxiesBtn">刷新代理</button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="settings-row">
-                        <div class="settings-label">可用代理数量:</div>
-                        <div class="settings-value" id="proxyCount">加载中...</div>
                     </div>
                     
                     <h3 class="settings-title" style="margin-top: 15px;"><i class="fas fa-filter"></i> 内容过滤</h3>
@@ -647,7 +792,9 @@
                         </div>
                     </div>
                     
-                    <iframe id="proxyFrame" class="result-frame" sandbox="allow-same-origin allow-scripts allow-forms" loading="lazy"></iframe>
+                    <div id="content" class="proxy-content"></div>
+                    
+                    <iframe id="proxyFrame" class="result-frame" sandbox="allow-scripts allow-forms" loading="lazy"></iframe>
                     
                     <div class="proxy-info" id="proxyInfo">
                         <i class="fas fa-info-circle"></i>
@@ -715,327 +862,284 @@
     </footer>
     
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // 获取元素
-            const proxyForm = document.getElementById('proxyForm');
-            const urlInput = document.getElementById('url');
-            const loadBtn = document.getElementById('loadBtn');
-            const directBtn = document.getElementById('directBtn');
-            const useProxyToggle = document.getElementById('useProxy');
-            const proxyCountrySelect = document.getElementById('proxyCountry');
-            const proxyCountElem = document.getElementById('proxyCount');
-            const removeAdsToggle = document.getElementById('removeAds');
-            const removeTrackersToggle = document.getElementById('removeTrackers');
-            const removeSensitiveToggle = document.getElementById('removeSensitive');
-            const addWarningToggle = document.getElementById('addWarning');
-            const optimizeToggle = document.getElementById('optimize');
-            const loader = document.getElementById('loader');
-            const resultContainer = document.getElementById('resultContainer');
-            const resultTitle = document.getElementById('resultTitle');
-            const proxyFrame = document.getElementById('proxyFrame');
-            const proxyInfo = document.getElementById('proxyInfo');
-            const refreshBtn = document.getElementById('refreshBtn');
-            const newTabBtn = document.getElementById('newTabBtn');
-            const closeBtn = document.getElementById('closeBtn');
-            const urlError = document.getElementById('urlError');
-            const tabs = document.querySelectorAll('.tab');
-            const tabContents = document.querySelectorAll('.tab-content');
-            const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    // 页面加载完成后的初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 获取元素
+        const urlInput = document.getElementById('urlInput');
+        const loadBtn = document.getElementById('loadBtn');
+        const directBtn = document.getElementById('directBtn');
+        const useProxyToggle = document.getElementById('use-proxy');
+        const proxyLocationSelect = document.getElementById('proxy-location');
+        const content = document.getElementById('content');
+        const refreshProxiesBtn = document.getElementById('refreshProxiesBtn');
+        const removeAdsToggle = document.getElementById('removeAds');
+        const removeTrackersToggle = document.getElementById('removeTrackers');
+        const removeSensitiveToggle = document.getElementById('removeSensitive');
+        const addWarningToggle = document.getElementById('addWarning');
+        const optimizeToggle = document.getElementById('optimize');
+        const loader = document.getElementById('loader');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultTitle = document.getElementById('resultTitle');
+        const proxyFrame = document.getElementById('proxyFrame');
+        const proxyInfo = document.getElementById('proxyInfo');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const newTabBtn = document.getElementById('newTabBtn');
+        const closeBtn = document.getElementById('closeBtn');
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+        // 设置URL输入框的默认值
+        if (urlInput && !urlInput.value) {
+            urlInput.value = 'https://';
+        }
+
+        // 验证URL
+        function validateUrl(url) {
+            if (!url) {
+                showError('请输入网址');
+                return false;
+            }
             
-            // 获取代理信息
-            async function fetchProxyInfo() {
-                try {
-                    const response = await fetch('/api/proxies');
-                    const data = await response.json();
-                    
-                    if (data && data.count) {
-                        proxyCountElem.textContent = data.count;
-                        
-                        // 填充国家/地区下拉列表
-                        if (data.countries && data.countries.length > 0) {
-                            // 清除现有选项（保留第一个"随机"选项）
-                            while (proxyCountrySelect.options.length > 1) {
-                                proxyCountrySelect.remove(1);
-                            }
-                            
-                            // 添加国家选项
-                            data.countries.forEach(country => {
-                                const option = document.createElement('option');
-                                option.value = country.code;
-                                option.textContent = `${country.name} (${country.count})`;
-                                proxyCountrySelect.appendChild(option);
-                            });
-                            
-                            // 恢复保存的选择
-                            const savedCountry = localStorage.getItem('proxyCountry');
-                            if (savedCountry) {
-                                proxyCountrySelect.value = savedCountry;
-                            }
-                        }
-                    } else {
-                        proxyCountElem.textContent = '0';
-                        useProxyToggle.checked = false;
-                        useProxyToggle.disabled = true;
-                        proxyCountrySelect.disabled = true;
-                    }
-                } catch (error) {
-                    console.error('获取代理信息失败:', error);
-                    proxyCountElem.textContent = '获取失败';
+            // 如果没有协议，添加https://
+            if (!/^https?:\/\//i.test(url)) {
+                url = 'https://' + url;
+                if (urlInput) {
+                    urlInput.value = url;
                 }
             }
             
-            // 初始获取代理信息
-            fetchProxyInfo();
+            return true;
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            if (content) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message show';
+                errorDiv.textContent = message;
+                content.innerHTML = '';
+                content.appendChild(errorDiv);
+            } else {
+                console.error('Content element not found');
+                alert(message);
+            }
+        }
+
+        // 加载URL的函数
+        async function loadUrl() {
+            if (!urlInput) return;
+            const url = urlInput.value.trim();
             
-            // 保存国家/地区选择
-            proxyCountrySelect.addEventListener('change', function() {
-                localStorage.setItem('proxyCountry', this.value);
-            });
-            
-            // 加载保存的过滤设置
-            function loadFilterSettings() {
-                const settings = {
-                    removeAds: localStorage.getItem('removeAds') !== 'false',
-                    removeTrackers: localStorage.getItem('removeTrackers') !== 'false',
-                    removeSensitive: localStorage.getItem('removeSensitive') === 'true',
-                    addWarning: localStorage.getItem('addWarning') === 'true',
-                    optimize: localStorage.getItem('optimize') !== 'false'
-                };
-                
-                removeAdsToggle.checked = settings.removeAds;
-                removeTrackersToggle.checked = settings.removeTrackers;
-                removeSensitiveToggle.checked = settings.removeSensitive;
-                addWarningToggle.checked = settings.addWarning;
-                optimizeToggle.checked = settings.optimize;
+            if (!validateUrl(url)) {
+                return;
             }
             
-            // 保存过滤设置
-            function saveFilterSettings() {
-                localStorage.setItem('removeAds', removeAdsToggle.checked);
-                localStorage.setItem('removeTrackers', removeTrackersToggle.checked);
-                localStorage.setItem('removeSensitive', removeSensitiveToggle.checked);
-                localStorage.setItem('addWarning', addWarningToggle.checked);
-                localStorage.setItem('optimize', optimizeToggle.checked);
-            }
-            
-            // 添加过滤设置变更监听
-            removeAdsToggle.addEventListener('change', saveFilterSettings);
-            removeTrackersToggle.addEventListener('change', saveFilterSettings);
-            removeSensitiveToggle.addEventListener('change', saveFilterSettings);
-            addWarningToggle.addEventListener('change', saveFilterSettings);
-            optimizeToggle.addEventListener('change', saveFilterSettings);
-            
-            // 初始加载过滤设置
-            loadFilterSettings();
-            
-            // 验证URL
-            function validateUrl(url) {
-                if (!url) {
-                    urlError.textContent = '请输入网址';
-                    urlError.classList.add('show');
-                    return false;
+            try {
+                // 显示加载状态
+                if (loadBtn) {
+                    loadBtn.disabled = true;
+                    loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
                 }
                 
-                // 如果没有协议，添加https://
-                if (!/^https?:\/\//i.test(url)) {
-                    urlInput.value = 'https://' + url;
-                }
-                
-                urlError.classList.remove('show');
-                return true;
-            }
-            
-            // 加载网页
-            function loadWebPage(direct = false) {
-                const url = urlInput.value;
-                
-                if (!validateUrl(url)) {
-                    return;
-                }
-                
-                // 显示加载动画
-                loader.classList.add('show');
-                resultContainer.classList.remove('show');
-                
-                // 重置性能统计
-                document.getElementById('loadTime').textContent = '-';
-                document.getElementById('requestCount').textContent = '-';
-                document.getElementById('pageSize').textContent = '-';
-                document.getElementById('optimizationStatus').textContent = '-';
-                
-                // 记录开始时间
-                const startTime = performance.now();
-                
-                // 构建代理URL
-                const useProxy = useProxyToggle.checked;
-                const country = proxyCountrySelect.value;
+                // 构建代理请求URL
+                const useProxy = useProxyToggle && useProxyToggle.checked;
+                const proxyLocation = proxyLocationSelect ? proxyLocationSelect.value : 'random';
                 let proxyUrl = `/proxy?url=${encodeURIComponent(url)}&useProxy=${useProxy}`;
                 
-                // 如果选择了特定国家/地区
-                if (country) {
-                    proxyUrl += `&country=${country}`;
+                if (useProxy && proxyLocation !== 'random') {
+                    proxyUrl += `&country=${proxyLocation}`;
                 }
                 
-                // 添加过滤参数
-                proxyUrl += `&removeAds=${removeAdsToggle.checked}`;
-                proxyUrl += `&removeTrackers=${removeTrackersToggle.checked}`;
-                proxyUrl += `&removeSensitive=${removeSensitiveToggle.checked}`;
-                proxyUrl += `&addWarning=${addWarningToggle.checked}`;
-                proxyUrl += `&optimize=${optimizeToggle.checked}`;
+                // 添加过滤选项
+                if (removeAdsToggle && removeAdsToggle.checked) proxyUrl += '&removeAds=true';
+                if (removeTrackersToggle && removeTrackersToggle.checked) proxyUrl += '&removeTrackers=true';
+                if (removeSensitiveToggle && removeSensitiveToggle.checked) proxyUrl += '&removeSensitive=true';
+                if (addWarningToggle && addWarningToggle.checked) proxyUrl += '&addWarning=true';
+                if (optimizeToggle && optimizeToggle.checked) proxyUrl += '&optimize=true';
                 
-                // 更新结果标题
-                resultTitle.textContent = url;
+                // 发送请求
+                const response = await fetch(proxyUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 
-                // 更新代理信息
-                if (useProxy) {
-                    const countryName = country ? 
-                        proxyCountrySelect.options[proxyCountrySelect.selectedIndex].text.split(' ')[0] : 
-                        '随机';
-                    proxyInfo.innerHTML = `<i class="fas fa-shield-alt"></i> <span>使用${countryName}代理服务器安全访问内容</span>`;
-                    proxyInfo.style.backgroundColor = '#e3f2fd';
+                // 处理响应
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('text/html')) {
+                    const html = await response.text();
+                    if (content) {
+                        content.innerHTML = html;
+                    } else {
+                        window.open(proxyUrl, '_blank');
+                    }
                 } else {
-                    proxyInfo.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>直接连接 (不使用代理)</span>';
-                    proxyInfo.style.backgroundColor = '#fff3e0';
+                    // 如果不是HTML内容，创建一个新窗口/标签页来显示内容
+                    window.open(proxyUrl, '_blank');
                 }
-                
-                if (direct) {
-                    // 使用iframe直接加载
-                    proxyFrame.src = proxyUrl;
+            } catch (error) {
+                console.error('加载失败:', error);
+                showError('加载失败: ' + error.message);
+            } finally {
+                // 恢复按钮状态
+                if (loadBtn) {
+                    loadBtn.disabled = false;
+                    loadBtn.innerHTML = '<i class="fas fa-globe"></i> 浏览网页';
+                }
+            }
+        }
+
+        // 直接访问URL
+        function openDirectly() {
+            if (!urlInput) return;
+            const url = urlInput.value.trim();
+            
+            if (!validateUrl(url)) {
+                return;
+            }
+            
+            // 在新标签页中打开URL
+            window.open(url, '_blank');
+        }
+
+        // 刷新代理列表
+        function refreshProxies() {
+            const refreshBtn = document.querySelector('.refresh-proxies');
+            if (!refreshBtn) return;
+            
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '刷新中...';
+            
+            fetch('/api/proxies?refresh=true')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('刷新后的代理信息:', data);
+                    const proxyCountElement = document.querySelector('.proxy-count');
+                    if (proxyCountElement) {
+                        proxyCountElement.textContent = data.total || 0;
+                    }
                     
-                    // iframe加载事件
-                    proxyFrame.onload = function() {
-                        // 计算加载时间
-                        const loadTime = Math.round(performance.now() - startTime);
-                        
-                        // 更新性能统计
-                        document.getElementById('loadTime').textContent = `${loadTime}ms`;
-                        document.getElementById('optimizationStatus').textContent = optimizeToggle.checked ? '已启用' : '已禁用';
-                        
-                        // 尝试获取更多性能信息
-                        try {
-                            // 使用fetch获取页面大小
-                            fetch(proxyUrl, { method: 'HEAD' })
-                                .then(response => {
-                                    const contentLength = response.headers.get('content-length');
-                                    if (contentLength) {
-                                        const size = formatBytes(parseInt(contentLength, 10));
-                                        document.getElementById('pageSize').textContent = size;
-                                    }
-                                })
-                                .catch(() => {
-                                    // 忽略错误
-                                });
-                            
-                            // 估计请求数量
-                            const requestCount = Math.floor(Math.random() * 20) + 10; // 模拟值，实际应用中可以通过其他方式获取
-                            document.getElementById('requestCount').textContent = `约 ${requestCount} 个请求`;
-                        } catch (e) {
-                            // 忽略错误
+                    // 重新初始化代理设置
+                    initializeProxySettings();
+                    
+                    refreshBtn.textContent = '刷新成功';
+                    setTimeout(() => {
+                        refreshBtn.textContent = '刷新代理';
+                        refreshBtn.disabled = false;
+                    }, 2000);
+                })
+                .catch(error => {
+                    console.error('刷新代理失败:', error);
+                    refreshBtn.textContent = '刷新失败';
+                    setTimeout(() => {
+                        refreshBtn.textContent = '刷新代理';
+                        refreshBtn.disabled = false;
+                    }, 2000);
+                });
+        }
+
+        // 初始化代理设置
+        function initializeProxySettings() {
+            fetch('/api/proxies')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('代理信息:', data);
+                    
+                    // 更新代理数量显示
+                    const proxyCountElement = document.querySelector('.proxy-count');
+                    if (proxyCountElement) {
+                        proxyCountElement.textContent = data.total || 0;
+                    }
+                    
+                    // 更新代理位置选择器
+                    if (proxyLocationSelect && data.countries && data.countries.length > 0) {
+                        // 清空现有选项（保留随机选项）
+                        while (proxyLocationSelect.options.length > 1) {
+                            proxyLocationSelect.remove(1);
                         }
                         
-                        loader.classList.remove('show');
-                        resultContainer.classList.add('show');
-                    };
+                        // 添加国家/地区选项
+                        data.countries.forEach(country => {
+                            const option = document.createElement('option');
+                            option.value = country.code;
+                            option.textContent = `${country.name} (${country.count})`;
+                            proxyLocationSelect.appendChild(option);
+                        });
+                        
+                        // 启用选择器
+                        proxyLocationSelect.disabled = false;
+                    }
                     
-                    // 处理iframe加载错误
-                    proxyFrame.onerror = function() {
-                        loader.classList.remove('show');
-                        urlError.textContent = '加载页面失败';
-                        urlError.classList.add('show');
-                    };
-                } else {
-                    // 在新标签页中打开
-                    window.open(proxyUrl, '_blank');
-                    loader.classList.remove('show');
-                }
-            }
-            
-            // 格式化字节数
-            function formatBytes(bytes, decimals = 2) {
-                if (bytes === 0) return '0 Bytes';
-                
-                const k = 1024;
-                const dm = decimals < 0 ? 0 : decimals;
-                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-                
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-            }
-            
-            // 性能统计折叠/展开
-            document.getElementById('statsToggle').addEventListener('click', function() {
-                this.classList.toggle('active');
-                const statsContent = document.getElementById('statsContent');
-                statsContent.classList.toggle('show');
-            });
-            
-            // 按钮事件
-            loadBtn.addEventListener('click', function() {
-                loadWebPage(true);
-            });
-            
-            directBtn.addEventListener('click', function() {
-                loadWebPage(false);
-            });
-            
-            // 刷新按钮
-            refreshBtn.addEventListener('click', function() {
-                if (proxyFrame.src) {
-                    proxyFrame.src = proxyFrame.src;
-                }
-            });
-            
-            // 在新标签页打开
-            newTabBtn.addEventListener('click', function() {
-                if (proxyFrame.src) {
-                    window.open(proxyFrame.src, '_blank');
-                }
-            });
-            
-            // 关闭结果
-            closeBtn.addEventListener('click', function() {
-                resultContainer.classList.remove('show');
-                proxyFrame.src = '';
-            });
-            
-            // 表单提交
-            proxyForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                loadWebPage(true);
-            });
-            
-            // 标签切换
-            tabs.forEach(tab => {
-                tab.addEventListener('click', function() {
-                    const tabId = this.getAttribute('data-tab');
+                    // 显示刷新按钮
+                    const refreshButton = document.querySelector('.refresh-proxies');
+                    if (refreshButton && (!data.total || data.total === 0)) {
+                        refreshButton.style.display = 'inline-block';
+                    }
+                })
+                .catch(error => {
+                    console.error('获取代理信息失败:', error);
+                    const proxyCountElement = document.querySelector('.proxy-count');
+                    if (proxyCountElement) {
+                        proxyCountElement.textContent = '0';
+                    }
                     
-                    // 更新标签状态
-                    tabs.forEach(t => t.classList.remove('active'));
-                    this.classList.add('active');
-                    
-                    // 更新内容显示
-                    tabContents.forEach(content => {
-                        content.style.display = 'none';
-                    });
-                    document.getElementById(`${tabId}-content`).style.display = 'block';
+                    const refreshButton = document.querySelector('.refresh-proxies');
+                    if (refreshButton) {
+                        refreshButton.style.display = 'inline-block';
+                    }
                 });
+        }
+
+        // 绑定按钮事件
+        if (loadBtn) {
+            loadBtn.addEventListener('click', loadUrl);
+        }
+        
+        if (directBtn) {
+            directBtn.addEventListener('click', openDirectly);
+        }
+
+        if (refreshProxiesBtn) {
+            refreshProxiesBtn.addEventListener('click', refreshProxies);
+        }
+
+        // 初始化代理设置
+        initializeProxySettings();
+
+        // 标签切换
+        tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                const tabId = this.getAttribute('data-tab');
+                
+                // 更新标签状态
+                tabs.forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                
+                // 更新内容显示
+                tabContents.forEach(content => {
+                    content.style.display = 'none';
+                });
+                document.getElementById(`${tabId}-content`).style.display = 'block';
             });
-            
-            // 保存设置
+        });
+
+        // 保存设置
+        if (saveSettingsBtn) {
             saveSettingsBtn.addEventListener('click', function() {
-                const userAgent = document.getElementById('userAgent').value;
-                const customHeadersText = document.getElementById('customHeaders').value;
+                const userAgent = document.getElementById('userAgent');
+                const customHeadersText = document.getElementById('customHeaders');
                 
                 try {
                     // 验证自定义请求头是否为有效的JSON
                     let customHeaders = {};
-                    if (customHeadersText) {
-                        customHeaders = JSON.parse(customHeadersText);
+                    if (customHeadersText && customHeadersText.value) {
+                        customHeaders = JSON.parse(customHeadersText.value);
                     }
                     
                     // 保存到localStorage
-                    localStorage.setItem('proxyUserAgent', userAgent);
+                    if (userAgent) {
+                        localStorage.setItem('proxyUserAgent', userAgent.value);
+                    }
                     localStorage.setItem('proxyCustomHeaders', JSON.stringify(customHeaders));
                     
                     alert('设置已保存');
@@ -1043,29 +1147,33 @@
                     alert('自定义请求头格式无效。请使用有效的JSON格式。');
                 }
             });
+        }
+
+        // 加载保存的设置
+        function loadSavedSettings() {
+            const userAgent = document.getElementById('userAgent');
+            const customHeadersText = document.getElementById('customHeaders');
             
-            // 加载保存的设置
-            function loadSavedSettings() {
-                const savedUserAgent = localStorage.getItem('proxyUserAgent');
-                const savedCustomHeaders = localStorage.getItem('proxyCustomHeaders');
-                
-                if (savedUserAgent) {
-                    document.getElementById('userAgent').value = savedUserAgent;
-                }
-                
-                if (savedCustomHeaders) {
-                    try {
-                        const headers = JSON.parse(savedCustomHeaders);
-                        document.getElementById('customHeaders').value = JSON.stringify(headers, null, 2);
-                    } catch (e) {
-                        console.error('无法解析保存的自定义请求头', e);
-                    }
-                }
+            const savedUserAgent = localStorage.getItem('proxyUserAgent');
+            const savedCustomHeaders = localStorage.getItem('proxyCustomHeaders');
+            
+            if (userAgent && savedUserAgent) {
+                userAgent.value = savedUserAgent;
             }
             
-            // 初始加载保存的设置
-            loadSavedSettings();
-        });
+            if (customHeadersText && savedCustomHeaders) {
+                try {
+                    const headers = JSON.parse(savedCustomHeaders);
+                    customHeadersText.value = JSON.stringify(headers, null, 2);
+                } catch (e) {
+                    console.error('无法解析保存的自定义请求头', e);
+                }
+            }
+        }
+        
+        // 初始加载保存的设置
+        loadSavedSettings();
+    });
     </script>
 </body>
 </html> 
