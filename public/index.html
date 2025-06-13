@@ -672,11 +672,8 @@
                            pattern="https?://.+"
                            title="请输入以http://或https://开头的网址">
                     <div class="button-group">
-                        <button id="loadBtn" class="action-button">
-                            <i class="fas fa-globe"></i> 浏览网页
-                        </button>
-                        <button id="directBtn" class="action-button">
-                            <i class="fas fa-external-link-alt"></i> 直接访问
+                        <button id="directBtn" class="action-button" style="width: 100%;">
+                            <i class="fas fa-external-link-alt"></i> 访问网页
                         </button>
                     </div>
                 </div>
@@ -866,7 +863,6 @@
     document.addEventListener('DOMContentLoaded', function() {
         // 获取元素
         const urlInput = document.getElementById('urlInput');
-        const loadBtn = document.getElementById('loadBtn');
         const directBtn = document.getElementById('directBtn');
         const useProxyToggle = document.getElementById('use-proxy');
         const proxyLocationSelect = document.getElementById('proxy-location');
@@ -926,8 +922,8 @@
             }
         }
 
-        // 加载URL的函数
-        async function loadUrl() {
+        // 通过代理访问URL
+        async function accessViaProxy() {
             if (!urlInput) return;
             const url = urlInput.value.trim();
             
@@ -937,9 +933,9 @@
             
             try {
                 // 显示加载状态
-                if (loadBtn) {
-                    loadBtn.disabled = true;
-                    loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
+                if (directBtn) {
+                    directBtn.disabled = true;
+                    directBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
                 }
                 
                 // 构建代理请求URL
@@ -958,48 +954,18 @@
                 if (addWarningToggle && addWarningToggle.checked) proxyUrl += '&addWarning=true';
                 if (optimizeToggle && optimizeToggle.checked) proxyUrl += '&optimize=true';
                 
-                // 发送请求
-                const response = await fetch(proxyUrl);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                // 处理响应
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('text/html')) {
-                    const html = await response.text();
-                    if (content) {
-                        content.innerHTML = html;
-                    } else {
-                        window.open(proxyUrl, '_blank');
-                    }
-                } else {
-                    // 如果不是HTML内容，创建一个新窗口/标签页来显示内容
-                    window.open(proxyUrl, '_blank');
-                }
+                // 在新标签页中打开代理URL
+                window.open(proxyUrl, '_blank');
             } catch (error) {
                 console.error('加载失败:', error);
                 showError('加载失败: ' + error.message);
             } finally {
                 // 恢复按钮状态
-                if (loadBtn) {
-                    loadBtn.disabled = false;
-                    loadBtn.innerHTML = '<i class="fas fa-globe"></i> 浏览网页';
+                if (directBtn) {
+                    directBtn.disabled = false;
+                    directBtn.innerHTML = '<i class="fas fa-external-link-alt"></i> 访问网页';
                 }
             }
-        }
-
-        // 直接访问URL
-        function openDirectly() {
-            if (!urlInput) return;
-            const url = urlInput.value.trim();
-            
-            if (!validateUrl(url)) {
-                return;
-            }
-            
-            // 在新标签页中打开URL
-            window.open(url, '_blank');
         }
 
         // 刷新代理列表
@@ -1091,12 +1057,8 @@
         }
 
         // 绑定按钮事件
-        if (loadBtn) {
-            loadBtn.addEventListener('click', loadUrl);
-        }
-        
         if (directBtn) {
-            directBtn.addEventListener('click', openDirectly);
+            directBtn.addEventListener('click', accessViaProxy);
         }
 
         if (refreshProxiesBtn) {
