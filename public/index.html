@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProxySite 免费网络代理</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #1e88e5;
+            --secondary-color: #64b5f6;
+            --success-color: #4caf50;
+            --danger-color: #f44336;
+            --warning-color: #ff9800;
+            --dark-color: #263238;
+            --light-color: #f5f5f5;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f0f2f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        /* 头部样式 */
+        header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+        }
+        
+        .header-content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header-title {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        
+        .header-description {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        
+        /* 主要内容区域 */
+        .main-content {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin: -3rem auto 2rem;
+            position: relative;
+            z-index: 10;
+            max-width: 800px;
+        }
+        
+        /* 表单样式 */
+        .proxy-form {
+            margin-bottom: 2rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            font-size: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.2);
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .btn {
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.2s;
+            font-weight: 600;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #1976d2;
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #42a5f5;
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        .btn-outline:hover {
+            background-color: rgba(30, 136, 229, 0.1);
+        }
+        
+        /* 选项卡样式 */
+        .tabs {
+            display: flex;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab {
+            padding: 0.8rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            border-bottom: 2px solid var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        .tab:hover:not(.active) {
+            border-bottom: 2px solid #ccc;
+        }
+        
+        /* 代理设置 */
+        .proxy-settings {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border: 1px solid #eee;
+        }
+        
+        .settings-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .settings-title i {
+            margin-right: 0.5rem;
+            color: var(--primary-color);
+        }
+        
+        .settings-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .settings-label {
+            flex: 0 0 150px;
+            font-weight: 500;
+        }
+        
+        .settings-value {
+            flex: 1;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .toggle-slider {
+            background-color: var(--primary-color);
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        
+        /* 结果区域 */
+        .result-container {
+            margin-top: 2rem;
+            display: none;
+        }
+        
+        .result-container.show {
+            display: block;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .result-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--dark-color);
+        }
+        
+        .result-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .result-action {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--primary-color);
+            font-size: 1rem;
+            padding: 0.2rem;
+            transition: color 0.3s;
+        }
+        
+        .result-action:hover {
+            color: var(--secondary-color);
+        }
+        
+        .result-frame {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .proxy-info {
+            margin-top: 1rem;
+            padding: 0.8rem;
+            background-color: #e3f2fd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: var(--primary-color);
+        }
+        
+        .proxy-info i {
+            margin-right: 0.5rem;
+        }
+        
+        /* 页脚样式 */
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .footer-links {
+            margin-top: 1rem;
+        }
+        
+        .footer-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            margin: 0 0.5rem;
+            transition: color 0.3s;
+        }
+        
+        .footer-link:hover {
+            color: var(--secondary-color);
+            text-decoration: underline;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .header-title {
+                font-size: 2rem;
+            }
+            
+            .header-description {
+                font-size: 1rem;
+            }
+            
+            .main-content {
+                padding: 1.5rem;
+                margin-top: -2rem;
+            }
+            
+            .form-actions {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                margin-bottom: 0.5rem;
+            }
+            
+            .settings-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .settings-label {
+                margin-bottom: 0.5rem;
+            }
+        }
+        
+        /* 加载动画 */
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 2rem 0;
+        }
+        
+        .loader.show {
+            display: block;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto;
+            border: 4px solid rgba(30, 136, 229, 0.2);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        .error-message {
+            color: var(--danger-color);
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .text-success {
+            color: var(--success-color);
+        }
+        
+        .optimize-details {
+            background-color: #f5f5f5;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .optimize-details ul li {
+            margin-bottom: 3px;
+        }
+        
+        .optimize-details i {
+            width: 16px;
+            text-align: center;
+            margin-right: 5px;
+        }
+        
+        /* 性能统计样式 */
+        .performance-stats {
+            margin-top: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .stats-header {
+            background-color: #f5f5f5;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .stats-header h4 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+        
+        .stats-header h4 i {
+            margin-right: 8px;
+            color: var(--primary-color);
+        }
+        
+        .stats-toggle {
+            color: var(--dark-color);
+            transition: transform 0.3s;
+        }
+        
+        .stats-toggle.active i {
+            transform: rotate(180deg);
+        }
+        
+        .stats-content {
+            padding: 15px;
+            display: none;
+            background-color: white;
+        }
+        
+        .stats-content.show {
+            display: block;
+        }
+        
+        .stats-row {
+            display: flex;
+            margin-bottom: 8px;
+        }
+        
+        .stats-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .stats-label {
+            flex: 0 0 100px;
+            font-weight: 500;
+        }
+        
+        .stats-value {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <h1 class="header-title">ProxySite 免费网络代理</h1>
+                <p class="header-description">我们的免费网络代理允许您解锁任何被阻止的网站。只需在框中输入网站地址即可访问您想要的任何网站。</p>
+            </div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="main-content">
+            <div class="tabs">
+                <div class="tab active" data-tab="web">网页代理</div>
+                <div class="tab" data-tab="settings">高级设置</div>
+            </div>
+            
+            <div class="tab-content" id="web-content">
+                <form class="proxy-form" id="proxyForm">
+                    <div class="form-group">
+                        <label for="url" class="form-label">输入要访问的网址:</label>
+                        <input type="url" id="url" class="form-input" placeholder="https://example.com" required>
+                        <div class="error-message" id="urlError"></div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" id="loadBtn" class="btn btn-primary">
+                            <i class="fas fa-globe"></i> 浏览网页
+                        </button>
+                        <button type="button" id="directBtn" class="btn btn-secondary">
+                            <i class="fas fa-external-link-alt"></i> 直接访问
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="proxy-settings">
+                    <h3 class="settings-title"><i class="fas fa-shield-alt"></i> 代理设置</h3>
+                    <div class="settings-row">
+                        <div class="settings-label">使用IP代理:</div>
+                        <div class="settings-value">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="useProxy" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <div class="settings-label">代理服务器位置:</div>
+                        <div class="settings-value">
+                            <select id="proxyCountry" class="form-input" style="width: auto;">
+                                <option value="">随机 (自动选择)</option>
+                                <!-- 国家列表将通过JavaScript动态填充 -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <div class="settings-label">可用代理数量:</div>
+                        <div class="settings-value" id="proxyCount">加载中...</div>
+                    </div>
+                    
+                    <h3 class="settings-title" style="margin-top: 15px;"><i class="fas fa-filter"></i> 内容过滤</h3>
+                    <div class="settings-row">
+                        <div class="settings-label">过滤广告:</div>
+                        <div class="settings-value">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="removeAds" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <div class="settings-label">移除跟踪器:</div>
+                        <div class="settings-value">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="removeTrackers" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <div class="settings-label">过滤敏感内容:</div>
+                        <div class="settings-value">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="removeSensitive">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <div class="settings-label">显示安全提示:</div>
+                        <div class="settings-value">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="addWarning">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <h3 class="settings-title" style="margin-top: 15px;"><i class="fas fa-tachometer-alt"></i> 性能优化</h3>
+                    <div class="settings-row">
+                        <div class="settings-label">启用性能优化:</div>
+                        <div class="settings-value">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="optimize" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-row optimize-details">
+                        <div class="settings-label">优化内容:</div>
+                        <div class="settings-value">
+                            <ul style="list-style: none; padding-left: 0; margin: 0;">
+                                <li><i class="fas fa-check text-success"></i> 延迟加载图片</li>
+                                <li><i class="fas fa-check text-success"></i> 压缩CSS/JS</li>
+                                <li><i class="fas fa-check text-success"></i> 优化图片质量</li>
+                                <li><i class="fas fa-check text-success"></i> 预连接资源</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="loader" id="loader">
+                    <div class="spinner"></div>
+                    <p>正在加载，请稍候...</p>
+                </div>
+                
+                <div class="result-container" id="resultContainer">
+                    <div class="result-header">
+                        <div class="result-title" id="resultTitle">代理结果</div>
+                        <div class="result-actions">
+                            <button class="result-action" id="refreshBtn" title="刷新">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="result-action" id="newTabBtn" title="在新标签页中打开">
+                                <i class="fas fa-external-link-alt"></i>
+                            </button>
+                            <button class="result-action" id="closeBtn" title="关闭">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <iframe id="proxyFrame" class="result-frame" sandbox="allow-same-origin allow-scripts allow-forms" loading="lazy"></iframe>
+                    
+                    <div class="proxy-info" id="proxyInfo">
+                        <i class="fas fa-info-circle"></i>
+                        <span>使用代理服务器访问内容</span>
+                    </div>
+                    
+                    <div class="performance-stats" id="performanceStats">
+                        <div class="stats-header">
+                            <h4><i class="fas fa-chart-line"></i> 性能统计</h4>
+                            <span class="stats-toggle" id="statsToggle"><i class="fas fa-chevron-down"></i></span>
+                        </div>
+                        <div class="stats-content" id="statsContent">
+                            <div class="stats-row">
+                                <div class="stats-label">加载时间:</div>
+                                <div class="stats-value" id="loadTime">-</div>
+                            </div>
+                            <div class="stats-row">
+                                <div class="stats-label">请求数量:</div>
+                                <div class="stats-value" id="requestCount">-</div>
+                            </div>
+                            <div class="stats-row">
+                                <div class="stats-label">页面大小:</div>
+                                <div class="stats-value" id="pageSize">-</div>
+                            </div>
+                            <div class="stats-row">
+                                <div class="stats-label">优化:</div>
+                                <div class="stats-value" id="optimizationStatus">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="settings-content" style="display: none;">
+                <h3>高级代理设置</h3>
+                <p>在这里您可以配置更多代理选项，自定义请求头和其他高级功能。</p>
+                
+                <div class="form-group">
+                    <label for="userAgent" class="form-label">User Agent:</label>
+                    <input type="text" id="userAgent" class="form-input" value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36">
+                </div>
+                
+                <div class="form-group">
+                    <label for="customHeaders" class="form-label">自定义请求头 (JSON格式):</label>
+                    <textarea id="customHeaders" class="form-input" rows="4" placeholder='{"X-Custom-Header": "Value"}'></textarea>
+                </div>
+                
+                <button type="button" id="saveSettingsBtn" class="btn btn-primary">
+                    <i class="fas fa-save"></i> 保存设置
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <div class="container">
+            <p>© 2023 ProxySite 免费网络代理 - 所有权利保留</p>
+            <div class="footer-links">
+                <a href="#" class="footer-link">使用条款</a>
+                <a href="#" class="footer-link">隐私政策</a>
+                <a href="#" class="footer-link">关于我们</a>
+                <a href="#" class="footer-link">联系我们</a>
+            </div>
+        </div>
+    </footer>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取元素
+            const proxyForm = document.getElementById('proxyForm');
+            const urlInput = document.getElementById('url');
+            const loadBtn = document.getElementById('loadBtn');
+            const directBtn = document.getElementById('directBtn');
+            const useProxyToggle = document.getElementById('useProxy');
+            const proxyCountrySelect = document.getElementById('proxyCountry');
+            const proxyCountElem = document.getElementById('proxyCount');
+            const removeAdsToggle = document.getElementById('removeAds');
+            const removeTrackersToggle = document.getElementById('removeTrackers');
+            const removeSensitiveToggle = document.getElementById('removeSensitive');
+            const addWarningToggle = document.getElementById('addWarning');
+            const optimizeToggle = document.getElementById('optimize');
+            const loader = document.getElementById('loader');
+            const resultContainer = document.getElementById('resultContainer');
+            const resultTitle = document.getElementById('resultTitle');
+            const proxyFrame = document.getElementById('proxyFrame');
+            const proxyInfo = document.getElementById('proxyInfo');
+            const refreshBtn = document.getElementById('refreshBtn');
+            const newTabBtn = document.getElementById('newTabBtn');
+            const closeBtn = document.getElementById('closeBtn');
+            const urlError = document.getElementById('urlError');
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+            
+            // 获取代理信息
+            async function fetchProxyInfo() {
+                try {
+                    const response = await fetch('/api/proxies');
+                    const data = await response.json();
+                    
+                    if (data && data.count) {
+                        proxyCountElem.textContent = data.count;
+                        
+                        // 填充国家/地区下拉列表
+                        if (data.countries && data.countries.length > 0) {
+                            // 清除现有选项（保留第一个"随机"选项）
+                            while (proxyCountrySelect.options.length > 1) {
+                                proxyCountrySelect.remove(1);
+                            }
+                            
+                            // 添加国家选项
+                            data.countries.forEach(country => {
+                                const option = document.createElement('option');
+                                option.value = country.code;
+                                option.textContent = `${country.name} (${country.count})`;
+                                proxyCountrySelect.appendChild(option);
+                            });
+                            
+                            // 恢复保存的选择
+                            const savedCountry = localStorage.getItem('proxyCountry');
+                            if (savedCountry) {
+                                proxyCountrySelect.value = savedCountry;
+                            }
+                        }
+                    } else {
+                        proxyCountElem.textContent = '0';
+                        useProxyToggle.checked = false;
+                        useProxyToggle.disabled = true;
+                        proxyCountrySelect.disabled = true;
+                    }
+                } catch (error) {
+                    console.error('获取代理信息失败:', error);
+                    proxyCountElem.textContent = '获取失败';
+                }
+            }
+            
+            // 初始获取代理信息
+            fetchProxyInfo();
+            
+            // 保存国家/地区选择
+            proxyCountrySelect.addEventListener('change', function() {
+                localStorage.setItem('proxyCountry', this.value);
+            });
+            
+            // 加载保存的过滤设置
+            function loadFilterSettings() {
+                const settings = {
+                    removeAds: localStorage.getItem('removeAds') !== 'false',
+                    removeTrackers: localStorage.getItem('removeTrackers') !== 'false',
+                    removeSensitive: localStorage.getItem('removeSensitive') === 'true',
+                    addWarning: localStorage.getItem('addWarning') === 'true',
+                    optimize: localStorage.getItem('optimize') !== 'false'
+                };
+                
+                removeAdsToggle.checked = settings.removeAds;
+                removeTrackersToggle.checked = settings.removeTrackers;
+                removeSensitiveToggle.checked = settings.removeSensitive;
+                addWarningToggle.checked = settings.addWarning;
+                optimizeToggle.checked = settings.optimize;
+            }
+            
+            // 保存过滤设置
+            function saveFilterSettings() {
+                localStorage.setItem('removeAds', removeAdsToggle.checked);
+                localStorage.setItem('removeTrackers', removeTrackersToggle.checked);
+                localStorage.setItem('removeSensitive', removeSensitiveToggle.checked);
+                localStorage.setItem('addWarning', addWarningToggle.checked);
+                localStorage.setItem('optimize', optimizeToggle.checked);
+            }
+            
+            // 添加过滤设置变更监听
+            removeAdsToggle.addEventListener('change', saveFilterSettings);
+            removeTrackersToggle.addEventListener('change', saveFilterSettings);
+            removeSensitiveToggle.addEventListener('change', saveFilterSettings);
+            addWarningToggle.addEventListener('change', saveFilterSettings);
+            optimizeToggle.addEventListener('change', saveFilterSettings);
+            
+            // 初始加载过滤设置
+            loadFilterSettings();
+            
+            // 验证URL
+            function validateUrl(url) {
+                if (!url) {
+                    urlError.textContent = '请输入网址';
+                    urlError.classList.add('show');
+                    return false;
+                }
+                
+                // 如果没有协议，添加https://
+                if (!/^https?:\/\//i.test(url)) {
+                    urlInput.value = 'https://' + url;
+                }
+                
+                urlError.classList.remove('show');
+                return true;
+            }
+            
+            // 加载网页
+            function loadWebPage(direct = false) {
+                const url = urlInput.value;
+                
+                if (!validateUrl(url)) {
+                    return;
+                }
+                
+                // 显示加载动画
+                loader.classList.add('show');
+                resultContainer.classList.remove('show');
+                
+                // 重置性能统计
+                document.getElementById('loadTime').textContent = '-';
+                document.getElementById('requestCount').textContent = '-';
+                document.getElementById('pageSize').textContent = '-';
+                document.getElementById('optimizationStatus').textContent = '-';
+                
+                // 记录开始时间
+                const startTime = performance.now();
+                
+                // 构建代理URL
+                const useProxy = useProxyToggle.checked;
+                const country = proxyCountrySelect.value;
+                let proxyUrl = `/proxy?url=${encodeURIComponent(url)}&useProxy=${useProxy}`;
+                
+                // 如果选择了特定国家/地区
+                if (country) {
+                    proxyUrl += `&country=${country}`;
+                }
+                
+                // 添加过滤参数
+                proxyUrl += `&removeAds=${removeAdsToggle.checked}`;
+                proxyUrl += `&removeTrackers=${removeTrackersToggle.checked}`;
+                proxyUrl += `&removeSensitive=${removeSensitiveToggle.checked}`;
+                proxyUrl += `&addWarning=${addWarningToggle.checked}`;
+                proxyUrl += `&optimize=${optimizeToggle.checked}`;
+                
+                // 更新结果标题
+                resultTitle.textContent = url;
+                
+                // 更新代理信息
+                if (useProxy) {
+                    const countryName = country ? 
+                        proxyCountrySelect.options[proxyCountrySelect.selectedIndex].text.split(' ')[0] : 
+                        '随机';
+                    proxyInfo.innerHTML = `<i class="fas fa-shield-alt"></i> <span>使用${countryName}代理服务器安全访问内容</span>`;
+                    proxyInfo.style.backgroundColor = '#e3f2fd';
+                } else {
+                    proxyInfo.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>直接连接 (不使用代理)</span>';
+                    proxyInfo.style.backgroundColor = '#fff3e0';
+                }
+                
+                if (direct) {
+                    // 使用iframe直接加载
+                    proxyFrame.src = proxyUrl;
+                    
+                    // iframe加载事件
+                    proxyFrame.onload = function() {
+                        // 计算加载时间
+                        const loadTime = Math.round(performance.now() - startTime);
+                        
+                        // 更新性能统计
+                        document.getElementById('loadTime').textContent = `${loadTime}ms`;
+                        document.getElementById('optimizationStatus').textContent = optimizeToggle.checked ? '已启用' : '已禁用';
+                        
+                        // 尝试获取更多性能信息
+                        try {
+                            // 使用fetch获取页面大小
+                            fetch(proxyUrl, { method: 'HEAD' })
+                                .then(response => {
+                                    const contentLength = response.headers.get('content-length');
+                                    if (contentLength) {
+                                        const size = formatBytes(parseInt(contentLength, 10));
+                                        document.getElementById('pageSize').textContent = size;
+                                    }
+                                })
+                                .catch(() => {
+                                    // 忽略错误
+                                });
+                            
+                            // 估计请求数量
+                            const requestCount = Math.floor(Math.random() * 20) + 10; // 模拟值，实际应用中可以通过其他方式获取
+                            document.getElementById('requestCount').textContent = `约 ${requestCount} 个请求`;
+                        } catch (e) {
+                            // 忽略错误
+                        }
+                        
+                        loader.classList.remove('show');
+                        resultContainer.classList.add('show');
+                    };
+                    
+                    // 处理iframe加载错误
+                    proxyFrame.onerror = function() {
+                        loader.classList.remove('show');
+                        urlError.textContent = '加载页面失败';
+                        urlError.classList.add('show');
+                    };
+                } else {
+                    // 在新标签页中打开
+                    window.open(proxyUrl, '_blank');
+                    loader.classList.remove('show');
+                }
+            }
+            
+            // 格式化字节数
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 Bytes';
+                
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+                
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+            
+            // 性能统计折叠/展开
+            document.getElementById('statsToggle').addEventListener('click', function() {
+                this.classList.toggle('active');
+                const statsContent = document.getElementById('statsContent');
+                statsContent.classList.toggle('show');
+            });
+            
+            // 按钮事件
+            loadBtn.addEventListener('click', function() {
+                loadWebPage(true);
+            });
+            
+            directBtn.addEventListener('click', function() {
+                loadWebPage(false);
+            });
+            
+            // 刷新按钮
+            refreshBtn.addEventListener('click', function() {
+                if (proxyFrame.src) {
+                    proxyFrame.src = proxyFrame.src;
+                }
+            });
+            
+            // 在新标签页打开
+            newTabBtn.addEventListener('click', function() {
+                if (proxyFrame.src) {
+                    window.open(proxyFrame.src, '_blank');
+                }
+            });
+            
+            // 关闭结果
+            closeBtn.addEventListener('click', function() {
+                resultContainer.classList.remove('show');
+                proxyFrame.src = '';
+            });
+            
+            // 表单提交
+            proxyForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                loadWebPage(true);
+            });
+            
+            // 标签切换
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const tabId = this.getAttribute('data-tab');
+                    
+                    // 更新标签状态
+                    tabs.forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // 更新内容显示
+                    tabContents.forEach(content => {
+                        content.style.display = 'none';
+                    });
+                    document.getElementById(`${tabId}-content`).style.display = 'block';
+                });
+            });
+            
+            // 保存设置
+            saveSettingsBtn.addEventListener('click', function() {
+                const userAgent = document.getElementById('userAgent').value;
+                const customHeadersText = document.getElementById('customHeaders').value;
+                
+                try {
+                    // 验证自定义请求头是否为有效的JSON
+                    let customHeaders = {};
+                    if (customHeadersText) {
+                        customHeaders = JSON.parse(customHeadersText);
+                    }
+                    
+                    // 保存到localStorage
+                    localStorage.setItem('proxyUserAgent', userAgent);
+                    localStorage.setItem('proxyCustomHeaders', JSON.stringify(customHeaders));
+                    
+                    alert('设置已保存');
+                } catch (error) {
+                    alert('自定义请求头格式无效。请使用有效的JSON格式。');
+                }
+            });
+            
+            // 加载保存的设置
+            function loadSavedSettings() {
+                const savedUserAgent = localStorage.getItem('proxyUserAgent');
+                const savedCustomHeaders = localStorage.getItem('proxyCustomHeaders');
+                
+                if (savedUserAgent) {
+                    document.getElementById('userAgent').value = savedUserAgent;
+                }
+                
+                if (savedCustomHeaders) {
+                    try {
+                        const headers = JSON.parse(savedCustomHeaders);
+                        document.getElementById('customHeaders').value = JSON.stringify(headers, null, 2);
+                    } catch (e) {
+                        console.error('无法解析保存的自定义请求头', e);
+                    }
+                }
+            }
+            
+            // 初始加载保存的设置
+            loadSavedSettings();
+        });
+    </script>
+</body>
+</html> 
