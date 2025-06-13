@@ -525,175 +525,100 @@ app.get('/resource-proxy', async (req, res) => {
   }
 });
 
-// 代理中间件配置
-app.use('/proxy', async (req, res, next) => {
-  // 从查询参数中获取目标URL
+// 代理请求处理
+app.get('/proxy', async (req, res) => {
   const targetUrl = req.query.url;
   const useProxy = req.query.useProxy === 'true';
   const countryCode = req.query.country || null;
   
-  // 获取过滤选项
-  const filters = {
-    removeAds: req.query.removeAds === 'true',
-    removeTrackers: req.query.removeTrackers === 'true',
-    removeSensitive: req.query.removeSensitive === 'true',
-    addWarning: req.query.addWarning === 'true',
-    optimize: req.query.optimize === 'true'
-  };
-  
-  // 检查是否需要内容过滤或优化
-  const needsProcessing = Object.values(filters).some(value => value === true);
-  
   if (!targetUrl) {
-    return res.status(400).send('缺少目标URL参数');
+    return res.status(400).json({ error: '请提供目标URL' });
   }
-  
-  try {
-    let proxyServer = null;
-    
-    // 如果请求使用代理
-    if (useProxy) {
-      proxyServer = getRandomProxy(countryCode);
-      if (!proxyServer) {
-        console.warn('没有可用的代理IP，使用直接连接');
-      } else {
-        console.log(`使用代理: ${proxyServer.protocol}://${proxyServer.ip}:${proxyServer.port} (${proxyServer.country})`);
-      }
-    }
-    
-    // 如果需要内容过滤或优化，使用自定义处理
-    if (needsProcessing) {
-      // 设置请求选项
-      const requestOptions = {
-        url: targetUrl,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Referer': targetUrl,
-          'Accept-Encoding': 'gzip, deflate, br'
-        }
-      };
-      
-      // 如果有代理，使用代理
-      if (proxyServer) {
-        requestOptions.proxy = `${proxyServer.protocol}://${proxyServer.ip}:${proxyServer.port}`;
-      }
-      
-      try {
-        // 获取网页内容
-        const response = await axios({
-          method: 'get',
-          url: targetUrl,
-          headers: requestOptions.headers,
-          ...(proxyServer && {
-            proxy: {
-              host: proxyServer.ip,
-              port: proxyServer.port,
-              protocol: proxyServer.protocol
-            }
-          }),
-          responseType: 'arraybuffer',
-          decompress: true
-        });
-        
-        // 检查内容类型
-        const contentType = response.headers['content-type'] || '';
-        
-        // 解码响应数据
-        let responseData;
-        const encoding = response.headers['content-encoding'];
-        
-        if (encoding === 'gzip') {
-          responseData = zlib.gunzipSync(response.data).toString('utf8');
-        } else if (encoding === 'deflate') {
-          responseData = zlib.inflateSync(response.data).toString('utf8');
-        } else if (encoding === 'br') {
-          responseData = zlib.brotliDecompressSync(response.data).toString('utf8');
-        } else {
-          responseData = response.data.toString('utf8');
-        }
-        
-        // 只过滤HTML内容
-        if (contentType.includes('text/html')) {
-          // 处理内容
-          const processedHtml = filterContent(responseData, filters);
-          
-          // 设置响应头
-          res.setHeader('Content-Type', contentType);
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Cache-Control', 'public, max-age=300');
-          
-          // 发送处理后的内容
-          return res.send(processedHtml);
-        } else {
-          // 非HTML内容直接返回
-          Object.keys(response.headers).forEach(header => {
-            // 排除一些可能导致问题的头
-            if (!['content-length', 'transfer-encoding', 'content-encoding'].includes(header.toLowerCase())) {
-              res.setHeader(header, response.headers[header]);
-            }
-          });
-          
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          return res.send(response.data);
-        }
-      } catch (error) {
-        console.error('获取内容失败:', error);
-        return res.status(500).send(`获取内容失败: ${error.message}`);
-      }
+
+  let proxyServer = null;
+  if (useProxy) {
+    proxyServer = getRandomProxy(countryCode);
+    if (!proxyServer) {
+      console.warn('没有可用的代理IP，使用直接连接');
     } else {
-      // 不需要过滤，使用标准代理中间件
-      const proxyOptions = {
-        target: targetUrl,
-        changeOrigin: true,
-        pathRewrite: {
-          [`^/proxy`]: '',
-        },
-        router: (req) => {
-          return req.query.url;
-        },
-        onProxyReq: (proxyReq, req, res) => {
-          // 修改请求头以模拟浏览器
-          proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-          
-          // 添加Referer头，有些网站需要这个来防止盗链
-          proxyReq.setHeader('Referer', targetUrl);
-          
-          // 如果有自定义请求头
-          const customHeaders = req.headers['x-custom-headers'];
-          if (customHeaders) {
-            try {
-              const headers = JSON.parse(customHeaders);
-              Object.keys(headers).forEach(header => {
-                proxyReq.setHeader(header, headers[header]);
-              });
-            } catch (err) {
-              console.error('解析自定义请求头失败:', err);
-            }
-          }
-        },
-        onProxyRes: (proxyRes, req, res) => {
-          // 修改响应头，允许跨域
-          proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-          
-          // 修改响应头，允许缓存
-          proxyRes.headers['Cache-Control'] = 'public, max-age=300';
-        },
-        onError: (err, req, res) => {
-          console.error('代理错误:', err);
-          res.status(500).send(`代理错误: ${err.message}`);
-        }
+      console.log(`使用代理: ${proxyServer.protocol}://${proxyServer.ip}:${proxyServer.port} (${proxyServer.country})`);
+    }
+  }
+
+  try {
+    // 设置请求选项
+    const requestOptions = {
+      timeout: 30000, // 30秒超时
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
+    };
+
+    // 如果使用代理，设置代理选项
+    if (proxyServer) {
+      requestOptions.proxy = {
+        host: proxyServer.ip,
+        port: proxyServer.port,
+        protocol: proxyServer.protocol
       };
+    }
+
+    // 发送请求
+    const response = await axios({
+      method: 'get',
+      url: targetUrl,
+      ...requestOptions,
+      validateStatus: false // 不抛出HTTP错误
+    });
+
+    // 设置响应头
+    res.set('Content-Type', response.headers['content-type'] || 'text/html');
+    
+    // 如果是HTML内容，进行处理
+    if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
+      let html = response.data;
       
-      // 如果有可用代理，设置代理
-      if (proxyServer) {
-        proxyOptions.agent = new HttpsProxyAgent(`${proxyServer.protocol}://${proxyServer.ip}:${proxyServer.port}`);
+      // 如果启用了广告过滤
+      if (req.query.removeAds === 'true') {
+        html = removeAds(html);
       }
       
-      const proxyMiddleware = createProxyMiddleware(proxyOptions);
-      proxyMiddleware(req, res, next);
+      // 如果启用了跟踪器移除
+      if (req.query.removeTrackers === 'true') {
+        html = removeTrackers(html);
+      }
+      
+      res.send(html);
+    } else {
+      // 对于非HTML内容，直接转发
+      res.send(response.data);
     }
   } catch (error) {
-    res.status(500).send(`代理错误: ${error.message}`);
+    console.error('代理请求失败:', error.message);
+    
+    // 如果是超时错误
+    if (error.code === 'ECONNABORTED') {
+      return res.status(504).json({
+        error: '代理请求超时',
+        message: '请求目标网站超时，请稍后重试或尝试其他代理服务器'
+      });
+    }
+    
+    // 如果是代理服务器错误
+    if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
+      return res.status(502).json({
+        error: '代理服务器连接失败',
+        message: '无法连接到代理服务器，请尝试其他代理或直接访问'
+      });
+    }
+    
+    // 其他错误
+    res.status(500).json({
+      error: '代理请求失败',
+      message: error.message
+    });
   }
 });
 
@@ -705,6 +630,95 @@ app.get('/', (req, res) => {
 // API 健康检查端点
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 调试路由 - 查看代理状态
+app.get('/debug/proxies', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.write(`
+    <html>
+      <head>
+        <title>代理调试</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f2f2f2; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+          .refresh { background-color: #4CAF50; color: white; border: none; padding: 10px 15px; cursor: pointer; }
+        </style>
+      </head>
+      <body>
+        <h1>代理服务器调试</h1>
+        <p>当前时间: ${new Date().toISOString()}</p>
+        <p>代理IP总数: ${proxyIPs.length}</p>
+        <p>国家/地区数: ${Object.keys(proxyByCountry).length}</p>
+        <button class="refresh" onclick="window.location.reload()">刷新</button>
+        <button class="refresh" onclick="window.location.href='/debug/proxies?refresh=true'">强制刷新代理</button>
+        <h2>代理IP列表 (前20个)</h2>
+        <table>
+          <tr>
+            <th>IP</th>
+            <th>端口</th>
+            <th>协议</th>
+            <th>国家</th>
+            <th>城市</th>
+            <th>匿名度</th>
+            <th>在线率</th>
+          </tr>
+  `);
+
+  // 显示前20个代理
+  const proxiesToShow = proxyIPs.slice(0, 20);
+  proxiesToShow.forEach(proxy => {
+    res.write(`
+      <tr>
+        <td>${proxy.ip}</td>
+        <td>${proxy.port}</td>
+        <td>${proxy.protocol}</td>
+        <td>${proxy.country} (${proxy.countryCode})</td>
+        <td>${proxy.city || 'N/A'}</td>
+        <td>${proxy.anonymity}</td>
+        <td>${proxy.uptime}%</td>
+      </tr>
+    `);
+  });
+
+  res.write(`
+        </table>
+        <h2>按国家/地区分类</h2>
+        <table>
+          <tr>
+            <th>国家/地区</th>
+            <th>代理数量</th>
+          </tr>
+  `);
+
+  // 显示国家/地区统计
+  Object.keys(proxyByCountry).forEach(code => {
+    const countryName = getCountryName(code);
+    const count = proxyByCountry[code].length;
+    res.write(`
+      <tr>
+        <td>${countryName} (${code})</td>
+        <td>${count}</td>
+      </tr>
+    `);
+  });
+
+  res.write(`
+        </table>
+      </body>
+    </html>
+  `);
+  res.end();
+
+  // 如果请求中包含refresh=true参数，刷新代理列表
+  if (req.query.refresh === 'true') {
+    fetchProxyIPs().then(count => {
+      console.log(`调试页面触发刷新，获取到 ${count} 个代理IP`);
+    });
+  }
 });
 
 // 处理 404
