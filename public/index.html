@@ -693,16 +693,23 @@
                             </div>
                             
                             <div class="setting-item">
-                                <label for="proxy-location">代理服务器位置:</label>
-                                <select id="proxy-location" class="form-select">
-                                    <option value="random">随机 (自动选择)</option>
-                                    <!-- 国家/地区选项将通过JavaScript动态添加 -->
+                                <label for="proxy-protocol">代理协议:</label>
+                                <select id="proxy-protocol" class="form-select">
+                                    <option value="https">HTTPS</option>
+                                    <option value="http">HTTP</option>
                                 </select>
                             </div>
-                            
+
                             <div class="setting-item">
-                                <label>可用代理数量: <span class="proxy-count">0</span></label>
-                                <button class="refresh-proxies" id="refreshProxiesBtn">刷新代理</button>
+                                <label for="current-proxy">当前代理IP:</label>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <select id="current-proxy" class="form-select" style="flex: 1;">
+                                        <option value="">加载中...</option>
+                                    </select>
+                                    <button id="refreshProxyBtn" class="btn btn-primary" style="padding: 8px; white-space: nowrap;">
+                                        <i class="fas fa-sync-alt"></i> 刷新IP
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -865,9 +872,10 @@
         const urlInput = document.getElementById('urlInput');
         const directBtn = document.getElementById('directBtn');
         const useProxyToggle = document.getElementById('use-proxy');
-        const proxyLocationSelect = document.getElementById('proxy-location');
+        const proxyProtocolSelect = document.getElementById('proxy-protocol');
+        const currentProxySelect = document.getElementById('current-proxy');
+        const refreshProxyBtn = document.getElementById('refreshProxyBtn');
         const content = document.getElementById('content');
-        const refreshProxiesBtn = document.getElementById('refreshProxiesBtn');
         const removeAdsToggle = document.getElementById('removeAds');
         const removeTrackersToggle = document.getElementById('removeTrackers');
         const removeSensitiveToggle = document.getElementById('removeSensitive');
@@ -884,6 +892,163 @@
         const tabs = document.querySelectorAll('.tab');
         const tabContents = document.querySelectorAll('.tab-content');
         const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+        // 获取代理列表
+        async function fetchProxyList() {
+            try {
+                const protocol = proxyProtocolSelect.value;
+                const response = await fetch(`https://proxy.scdn.io/api/get_proxy.php?protocol=${protocol}&count=${protocol === 'https' ? 20 : 2}`);
+                if (!response.ok) {
+                    throw new Error('获取代理列表失败');
+                }
+                const data = await response.json();
+                
+                // 更新代理选择器
+                updateProxySelect(data);
+                
+                return data;
+            } catch (error) {
+                console.error('获取代理列表失败:', error);
+                showError('获取代理列表失败: ' + error.message);
+                return [];
+            }
+        }
+        
+        // 更新代理选择器
+        function updateProxySelect(data) {
+            if (!currentProxySelect) return;
+            
+            // 清空现有选项
+            currentProxySelect.innerHTML = '';
+            
+            // 添加默认选项
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = '请选择代理IP';
+            currentProxySelect.appendChild(defaultOption);
+            
+            // 添加代理选项
+            let proxyList = [];
+            
+            // 检查不同的数据结构
+            if (data && data.data && data.data.proxies) {
+                // 新的API格式 {data: {proxies: [...]}}
+                proxyList = data.data.proxies;
+            } else if (data && data.proxies) {
+                // 旧的API格式 {proxies: [...]}
+                if (Array.isArray(data.proxies)) {
+                    proxyList = data.proxies;
+                } else if (typeof data.proxies === 'object') {
+                    // 对象格式的代理列表 {proxies: {0: "ip:port", 1: "ip:port"}}
+                    proxyList = Object.values(data.proxies).filter(Boolean);
+                }
+            }
+            
+            // 添加代理选项到选择器
+            if (proxyList.length > 0) {
+                proxyList.forEach((proxy) => {
+                    const option = document.createElement('option');
+                    option.value = proxy;
+                    option.textContent = proxy;
+                    currentProxySelect.appendChild(option);
+                });
+            } else {
+                // 如果没有代理，显示提示
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = '没有可用的代理';
+                currentProxySelect.appendChild(option);
+            }
+        }
+        
+        // 刷新代理列表
+        async function refreshProxyList() {
+            if (!refreshProxyBtn) return;
+            
+            refreshProxyBtn.disabled = true;
+            const originalText = refreshProxyBtn.innerHTML;
+            refreshProxyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 刷新中...';
+            
+            try {
+                await fetchProxyList();
+                refreshProxyBtn.innerHTML = '<i class="fas fa-check"></i> 刷新成功';
+            } catch (error) {
+                refreshProxyBtn.innerHTML = '<i class="fas fa-times"></i> 刷新失败';
+            } finally {
+                setTimeout(() => {
+                    refreshProxyBtn.disabled = false;
+                    refreshProxyBtn.innerHTML = originalText;
+                }, 2000);
+            }
+        }
+        
+        // 通过代理访问URL
+        async function accessViaProxy() {
+            if (!urlInput) return;
+            const url = urlInput.value.trim();
+            
+            if (!validateUrl(url)) {
+                return;
+            }
+            
+            try {
+                // 显示加载状态
+                if (directBtn) {
+                    directBtn.disabled = true;
+                    directBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
+                }
+                
+                // 获取当前选择的代理
+                const selectedProxy = currentProxySelect.value;
+                if (!selectedProxy && useProxyToggle.checked) {
+                    throw new Error('请选择一个代理服务器');
+                }
+                
+                // 构建代理请求URL
+                let proxyUrl = `/proxy?url=${encodeURIComponent(url)}`;
+                
+                // 添加代理设置
+                if (useProxyToggle.checked) {
+                    proxyUrl += `&proxy=${encodeURIComponent(selectedProxy)}`;
+                    proxyUrl += `&protocol=${proxyProtocolSelect.value}`;
+                }
+                
+                // 添加过滤选项
+                if (removeAdsToggle && removeAdsToggle.checked) proxyUrl += '&removeAds=true';
+                if (removeTrackersToggle && removeTrackersToggle.checked) proxyUrl += '&removeTrackers=true';
+                if (removeSensitiveToggle && removeSensitiveToggle.checked) proxyUrl += '&removeSensitive=true';
+                if (addWarningToggle && addWarningToggle.checked) proxyUrl += '&addWarning=true';
+                if (optimizeToggle && optimizeToggle.checked) proxyUrl += '&optimize=true';
+                
+                // 在新标签页中打开代理URL
+                window.open(proxyUrl, '_blank');
+            } catch (error) {
+                console.error('加载失败:', error);
+                showError('加载失败: ' + error.message);
+            } finally {
+                // 恢复按钮状态
+                if (directBtn) {
+                    directBtn.disabled = false;
+                    directBtn.innerHTML = '<i class="fas fa-external-link-alt"></i> 访问网页';
+                }
+            }
+        }
+        
+        // 绑定事件
+        if (directBtn) {
+            directBtn.addEventListener('click', accessViaProxy);
+        }
+        
+        if (refreshProxyBtn) {
+            refreshProxyBtn.addEventListener('click', refreshProxyList);
+        }
+        
+        if (proxyProtocolSelect) {
+            proxyProtocolSelect.addEventListener('change', fetchProxyList);
+        }
+        
+        // 初始化
+        fetchProxyList();
 
         // 设置URL输入框的默认值
         if (urlInput && !urlInput.value) {
@@ -921,152 +1086,6 @@
                 alert(message);
             }
         }
-
-        // 通过代理访问URL
-        async function accessViaProxy() {
-            if (!urlInput) return;
-            const url = urlInput.value.trim();
-            
-            if (!validateUrl(url)) {
-                return;
-            }
-            
-            try {
-                // 显示加载状态
-                if (directBtn) {
-                    directBtn.disabled = true;
-                    directBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
-                }
-                
-                // 构建代理请求URL
-                const useProxy = useProxyToggle && useProxyToggle.checked;
-                const proxyLocation = proxyLocationSelect ? proxyLocationSelect.value : 'random';
-                let proxyUrl = `/proxy?url=${encodeURIComponent(url)}&useProxy=${useProxy}`;
-                
-                if (useProxy && proxyLocation !== 'random') {
-                    proxyUrl += `&country=${proxyLocation}`;
-                }
-                
-                // 添加过滤选项
-                if (removeAdsToggle && removeAdsToggle.checked) proxyUrl += '&removeAds=true';
-                if (removeTrackersToggle && removeTrackersToggle.checked) proxyUrl += '&removeTrackers=true';
-                if (removeSensitiveToggle && removeSensitiveToggle.checked) proxyUrl += '&removeSensitive=true';
-                if (addWarningToggle && addWarningToggle.checked) proxyUrl += '&addWarning=true';
-                if (optimizeToggle && optimizeToggle.checked) proxyUrl += '&optimize=true';
-                
-                // 在新标签页中打开代理URL
-                window.open(proxyUrl, '_blank');
-            } catch (error) {
-                console.error('加载失败:', error);
-                showError('加载失败: ' + error.message);
-            } finally {
-                // 恢复按钮状态
-                if (directBtn) {
-                    directBtn.disabled = false;
-                    directBtn.innerHTML = '<i class="fas fa-external-link-alt"></i> 访问网页';
-                }
-            }
-        }
-
-        // 刷新代理列表
-        function refreshProxies() {
-            const refreshBtn = document.querySelector('.refresh-proxies');
-            if (!refreshBtn) return;
-            
-            refreshBtn.disabled = true;
-            refreshBtn.textContent = '刷新中...';
-            
-            fetch('/api/proxies?refresh=true')
-                .then(response => response.json())
-                .then(data => {
-                    console.log('刷新后的代理信息:', data);
-                    const proxyCountElement = document.querySelector('.proxy-count');
-                    if (proxyCountElement) {
-                        proxyCountElement.textContent = data.total || 0;
-                    }
-                    
-                    // 重新初始化代理设置
-                    initializeProxySettings();
-                    
-                    refreshBtn.textContent = '刷新成功';
-                    setTimeout(() => {
-                        refreshBtn.textContent = '刷新代理';
-                        refreshBtn.disabled = false;
-                    }, 2000);
-                })
-                .catch(error => {
-                    console.error('刷新代理失败:', error);
-                    refreshBtn.textContent = '刷新失败';
-                    setTimeout(() => {
-                        refreshBtn.textContent = '刷新代理';
-                        refreshBtn.disabled = false;
-                    }, 2000);
-                });
-        }
-
-        // 初始化代理设置
-        function initializeProxySettings() {
-            fetch('/api/proxies')
-                .then(response => response.json())
-                .then(data => {
-                    console.log('代理信息:', data);
-                    
-                    // 更新代理数量显示
-                    const proxyCountElement = document.querySelector('.proxy-count');
-                    if (proxyCountElement) {
-                        proxyCountElement.textContent = data.total || 0;
-                    }
-                    
-                    // 更新代理位置选择器
-                    if (proxyLocationSelect && data.countries && data.countries.length > 0) {
-                        // 清空现有选项（保留随机选项）
-                        while (proxyLocationSelect.options.length > 1) {
-                            proxyLocationSelect.remove(1);
-                        }
-                        
-                        // 添加国家/地区选项
-                        data.countries.forEach(country => {
-                            const option = document.createElement('option');
-                            option.value = country.code;
-                            option.textContent = `${country.name} (${country.count})`;
-                            proxyLocationSelect.appendChild(option);
-                        });
-                        
-                        // 启用选择器
-                        proxyLocationSelect.disabled = false;
-                    }
-                    
-                    // 显示刷新按钮
-                    const refreshButton = document.querySelector('.refresh-proxies');
-                    if (refreshButton && (!data.total || data.total === 0)) {
-                        refreshButton.style.display = 'inline-block';
-                    }
-                })
-                .catch(error => {
-                    console.error('获取代理信息失败:', error);
-                    const proxyCountElement = document.querySelector('.proxy-count');
-                    if (proxyCountElement) {
-                        proxyCountElement.textContent = '0';
-                    }
-                    
-                    const refreshButton = document.querySelector('.refresh-proxies');
-                    if (refreshButton) {
-                        refreshButton.style.display = 'inline-block';
-                    }
-                });
-        }
-
-        // 绑定按钮事件
-        if (directBtn) {
-            directBtn.addEventListener('click', accessViaProxy);
-        }
-
-        if (refreshProxiesBtn) {
-            refreshProxiesBtn.addEventListener('click', refreshProxies);
-        }
-
-        // 初始化代理设置
-        initializeProxySettings();
 
         // 标签切换
         tabs.forEach(tab => {
