@@ -36,55 +36,118 @@ let proxyByCountry = {};
 
 // 获取代理IP列表
 async function fetchProxyIPs() {
-  try {
-    // 这里可以替换为您自己的IP代理源
-    // 以下是一些免费代理API的示例
-    const response = await axios.get('https://proxylist.geonode.com/api/proxy-list?limit=100&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=50&speed=fast');
-    
-    if (response.data && response.data.data) {
-      const newProxies = response.data.data.map(proxy => {
+  const proxyApis = [
+    {
+      url: 'https://proxylist.geonode.com/api/proxy-list?limit=100&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=90&protocols=http,https',
+      parser: (data) => data.data.map(proxy => ({
+        ip: proxy.ip,
+        port: proxy.port,
+        protocol: proxy.protocols[0],
+        country: proxy.country,
+        countryCode: proxy.country_code,
+        city: proxy.city,
+        anonymity: proxy.anonymityLevel,
+        uptime: proxy.upTime,
+        speed: proxy.speed || 'medium'
+      }))
+    },
+    {
+      url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
+      parser: (data) => data.split('\n').filter(line => line.trim()).map(line => {
+        const [ip, port] = line.split(':');
         return {
-          ip: proxy.ip,
-          port: proxy.port,
-          protocol: proxy.protocols[0],
-          country: proxy.country,
-          countryCode: proxy.country_code,
-          city: proxy.city,
-          anonymity: proxy.anonymityLevel,
-          uptime: proxy.upTime,
-          speed: proxy.speed || 'medium'
+          ip,
+          port: parseInt(port),
+          protocol: 'http',
+          country: 'Unknown',
+          countryCode: 'XX',
+          city: 'Unknown',
+          anonymity: 'unknown',
+          uptime: 100,
+          speed: 'medium'
         };
-      });
-      
-      proxyIPs = newProxies.filter(proxy => proxy.protocol === 'http' || proxy.protocol === 'https');
-      console.log(`成功获取 ${proxyIPs.length} 个代理IP`);
-      
-      // 按国家/地区分类
-      proxyByCountry = {};
-      proxyIPs.forEach(proxy => {
-        if (!proxyByCountry[proxy.countryCode]) {
-          proxyByCountry[proxy.countryCode] = [];
+      })
+    },
+    {
+      url: 'https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all&format=json',
+      parser: (data) => {
+        try {
+          const proxies = JSON.parse(data);
+          return proxies.map(proxy => ({
+            ip: proxy.ip,
+            port: proxy.port,
+            protocol: proxy.protocol,
+            country: proxy.country || 'Unknown',
+            countryCode: proxy.countryCode || 'XX',
+            city: 'Unknown',
+            anonymity: proxy.anonymity || 'unknown',
+            uptime: 100,
+            speed: 'medium'
+          }));
+        } catch (e) {
+          return [];
         }
-        proxyByCountry[proxy.countryCode].push(proxy);
+      }
+    }
+  ];
+
+  let successfulFetch = false;
+  let newProxies = [];
+
+  for (const api of proxyApis) {
+    try {
+      console.log(`尝试从 ${api.url} 获取代理IP...`);
+      const response = await axios.get(api.url, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
       });
-      
-      // 缓存代理IP列表
-      proxyCache.set('proxyList', proxyIPs);
-      proxyCache.set('proxyByCountry', proxyByCountry);
-    }
-  } catch (error) {
-    console.error('获取代理IP失败:', error.message);
-    // 如果获取失败，尝试从缓存中获取
-    const cachedProxies = proxyCache.get('proxyList');
-    const cachedProxyByCountry = proxyCache.get('proxyByCountry');
-    if (cachedProxies) {
-      proxyIPs = cachedProxies;
-      console.log(`从缓存中获取 ${proxyIPs.length} 个代理IP`);
-    }
-    if (cachedProxyByCountry) {
-      proxyByCountry = cachedProxyByCountry;
+
+      if (response.data) {
+        const parsedProxies = api.parser(response.data);
+        if (parsedProxies && parsedProxies.length > 0) {
+          newProxies = parsedProxies;
+          successfulFetch = true;
+          console.log(`成功从 ${api.url} 获取 ${newProxies.length} 个代理IP`);
+          break;
+        }
+      }
+    } catch (error) {
+      console.error(`从 ${api.url} 获取代理IP失败:`, error.message);
+      continue;
     }
   }
+
+  if (!successfulFetch) {
+    console.error('所有代理源获取失败，尝试使用缓存');
+    const cachedProxies = proxyCache.get('proxyList');
+    if (cachedProxies) {
+      newProxies = cachedProxies;
+      console.log(`从缓存中获取 ${newProxies.length} 个代理IP`);
+    }
+  }
+
+  // 更新代理IP列表
+  proxyIPs = newProxies.filter(proxy => proxy.protocol === 'http' || proxy.protocol === 'https');
+  
+  // 按国家/地区分类
+  proxyByCountry = {};
+  proxyIPs.forEach(proxy => {
+    if (!proxyByCountry[proxy.countryCode]) {
+      proxyByCountry[proxy.countryCode] = [];
+    }
+    proxyByCountry[proxy.countryCode].push(proxy);
+  });
+  
+  // 缓存代理IP列表
+  if (proxyIPs.length > 0) {
+    proxyCache.set('proxyList', proxyIPs);
+    proxyCache.set('proxyByCountry', proxyByCountry);
+  }
+
+  // 返回代理IP数量
+  return proxyIPs.length;
 }
 
 // 初始获取代理IP
@@ -112,21 +175,39 @@ function getRandomProxy(countryCode = null) {
 }
 
 // API路由 - 获取当前代理IP列表
-app.get('/api/proxies', (req, res) => {
-  // 获取可用国家/地区列表
-  const countries = Object.keys(proxyByCountry).map(code => {
-    return {
-      code: code,
-      name: getCountryName(code),
-      count: proxyByCountry[code].length
-    };
-  }).sort((a, b) => b.count - a.count);
-  
-  res.json({
-    count: proxyIPs.length,
-    countries: countries,
-    proxies: proxyIPs.slice(0, 10) // 只返回前10个，避免泄露太多
-  });
+app.get('/api/proxies', async (req, res) => {
+  try {
+    // 强制刷新代理列表
+    const refresh = req.query.refresh === 'true';
+    if (refresh) {
+      const count = await fetchProxyIPs();
+      console.log(`刷新获取到 ${count} 个代理IP`);
+    }
+
+    // 获取可用国家/地区列表
+    const countries = Object.keys(proxyByCountry).map(code => {
+      return {
+        code: code,
+        name: getCountryName(code),
+        count: proxyByCountry[code].length
+      };
+    }).sort((a, b) => b.count - a.count);
+    
+    res.json({
+      total: proxyIPs.length,
+      countries: countries,
+      proxies: proxyIPs.slice(0, 10), // 只返回前10个，避免泄露太多
+      lastUpdate: proxyCache.getTtl('proxyList'),
+      status: proxyIPs.length > 0 ? 'ok' : 'no_proxies'
+    });
+  } catch (error) {
+    console.error('获取代理列表失败:', error);
+    res.status(500).json({
+      error: '获取代理列表失败',
+      message: error.message,
+      status: 'error'
+    });
+  }
 });
 
 // 获取国家名称
