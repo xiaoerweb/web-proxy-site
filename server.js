@@ -427,10 +427,14 @@ app.get('/proxy', async (req, res) => {
             html = html.replace(/<script>document\.write\(/g, '<script>try{document.write(')
                        .replace(/\)<\/script>/g, ')}catch(e){console.error(e);}</script>');
             
+            // 修复其他常见语法错误
+            html = html.replace(/if\s*\(\s*\w+\s*\)\s*\{\s*\}/g, 'if(false){}')
+                       .replace(/for\s*\(\s*;\s*;\s*\)\s*\{\s*\}/g, 'for(;;){}');
+            
             const $ = cheerio.load(html);
             
-            // 获取当前的炮灰域名
-            const currentHost = req.isCannonFodder ? req.cannonFodderHost : req.get('host');
+            // 获取当前的主机名
+            const currentHost = req.get('host');
             const protocol = req.protocol;
             const baseUrl = `${protocol}://${currentHost}`;
             
@@ -483,7 +487,7 @@ app.get('/proxy', async (req, res) => {
                 if (href) {
                     try {
                         const absoluteUrl = new URL(href, targetUrl).href;
-                        const proxyUrl = `/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+                        const proxyUrl = `${baseUrl}/proxy?url=${encodeURIComponent(absoluteUrl)}`;
                         $(el).attr('href', proxyUrl);
                     } catch (e) {
                         // 忽略无效的URL
@@ -505,8 +509,8 @@ app.get('/proxy', async (req, res) => {
                             return;
                         }
                         
-                        // 创建我们自己的代理URL
-                        const proxyUrl = `/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+                        // 创建我们自己的代理URL，使用完整的基础URL
+                        const proxyUrl = `${baseUrl}/proxy?url=${encodeURIComponent(absoluteUrl)}`;
                         
                         if ($(el).attr('src')) {
                             $(el).attr('src', proxyUrl);
