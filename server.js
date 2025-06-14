@@ -364,10 +364,11 @@ app.get('/proxy', async (req, res) => {
             timeout: 30000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept': '*/*',
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
                 'Host': parsedUrl.host,
-                'Referer': parsedUrl.origin
+                'Referer': parsedUrl.origin,
+                'Origin': parsedUrl.origin
             },
             validateStatus: false,
             maxRedirects: 5,
@@ -379,6 +380,12 @@ app.get('/proxy', async (req, res) => {
         
         // 获取响应类型
         const contentType = response.headers['content-type'] || '';
+        
+        // 设置CORS头
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+        res.set('Access-Control-Allow-Credentials', 'true');
         
         // 如果是HTML内容，进行处理
         if (contentType.includes('text/html')) {
@@ -454,35 +461,17 @@ app.get('/proxy', async (req, res) => {
                     try {
                         const absoluteUrl = new URL(src, targetUrl).href;
                         
-                        // 检查资源类型
-                        const ext = path.extname(absoluteUrl).toLowerCase();
+                        // 所有资源都使用代理URL
+                        const proxyUrl = `/proxy?url=${encodeURIComponent(absoluteUrl)}`;
                         
-                        // 对于静态资源，使用直接路径，并添加原始URL作为参数
-                        if (['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.json'].includes(ext)) {
-                            // 提取路径部分
-                            const urlPath = new URL(absoluteUrl).pathname;
-                            // 创建一个资源URL，包含原始URL和基础URL作为参数
-                            const resourceUrl = `${urlPath}?originalUrl=${encodeURIComponent(absoluteUrl)}&baseUrl=${encodeURIComponent(targetUrl)}`;
-                            
-                            if ($(el).attr('src')) {
-                                $(el).attr('src', resourceUrl);
-                            } else {
-                                $(el).attr('href', resourceUrl);
-                            }
-                            
+                        if ($(el).attr('src')) {
+                            $(el).attr('src', proxyUrl);
                             // 对于JavaScript文件，添加crossorigin属性
-                            if (ext === '.js') {
+                            if (path.extname(absoluteUrl).toLowerCase() === '.js') {
                                 $(el).attr('crossorigin', 'anonymous');
                             }
                         } else {
-                            // 其他资源使用代理
-                            const proxyUrl = `/proxy?url=${encodeURIComponent(absoluteUrl)}`;
-                            
-                            if ($(el).attr('src')) {
-                                $(el).attr('src', proxyUrl);
-                            } else {
-                                $(el).attr('href', proxyUrl);
-                            }
+                            $(el).attr('href', proxyUrl);
                         }
                     } catch (e) {
                         // 忽略无效的URL
