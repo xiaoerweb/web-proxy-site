@@ -851,46 +851,7 @@
                 <div class="proxy-settings">
                     <div class="settings-section">
                         <div class="settings-header">
-                            <i class="fas fa-shield-alt"></i> 代理设置
-                        </div>
-                        <div class="settings-content">
-                            <div class="setting-item">
-                                <label for="use-proxy">使用IP代理:</label>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="use-proxy" checked>
-                                    <span class="slider round"></span>
-                                </div>
-                            </div>
-                            
-                            <div class="setting-item">
-                                <label for="proxy-protocol">代理协议:</label>
-                                <select id="proxy-protocol" class="form-select">
-                                    <option value="https">HTTPS</option>
-                                    <option value="http">HTTP</option>
-                                    <option value="socks5">SOCKS5</option>
-                                    <option value="socks4">SOCKS4</option>
-                                </select>
-                            </div>
-
-                            <div class="setting-item">
-                                <label for="current-proxy">代理IP:</label>
-                                <div style="display: flex; flex-direction: column; gap: 10px;">
-                                    <div style="display: flex; gap: 10px;">
-                                        <input type="text" id="customProxyHost" class="form-input" placeholder="代理服务器IP" style="flex: 2;">
-                                        <input type="number" id="customProxyPort" class="form-input" placeholder="端口" style="flex: 1;" min="1" max="65535">
-                                    </div>
-                                    <div class="custom-proxy-info" style="margin-top: 5px; font-size: 12px; color: #666;">
-                                        <i class="fas fa-info-circle"></i> 格式示例：127.0.0.1:8080
-                                    </div>
-                                    <button id="getProxiesBtn" class="btn btn-primary" style="margin-top: 10px;">
-                                        <i class="fas fa-sync-alt"></i> 获取代理列表
-                                    </button>
-                                    <div id="proxyListContainer" style="margin-top: 10px; max-height: 200px; overflow-y: auto; display: none;">
-                                        <div class="proxy-list-header" style="font-weight: bold; margin-bottom: 5px;">可用代理列表：</div>
-                                        <div id="proxyList" style="border: 1px solid #ddd; border-radius: 4px; padding: 10px; background-color: #f9f9f9;"></div>
-                                    </div>
-                                </div>
-                            </div>
+                            <i class="fas fa-shield-alt"></i> 访问设置
                         </div>
                     </div>
                     
@@ -1381,13 +1342,6 @@
                     directBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
                 }
                 
-                // 检查代理设置
-                if (useProxyToggle && useProxyToggle.checked) {
-                    if (!validateCustomProxy()) {
-                        return;
-                    }
-                }
-                
                 // 获取随机炮灰域名
                 const domainResponse = await fetch('/api/cannon-fodder-domain');
                 const domainData = await domainResponse.json();
@@ -1401,12 +1355,6 @@
                 // 构建代理请求URL
                 let proxyUrl = `/proxy?url=${encodeURIComponent(url)}`;
                 
-                // 添加代理设置
-                if (useProxyToggle && useProxyToggle.checked) {
-                    proxyUrl += `&proxy=${encodeURIComponent(customProxyHost.value.trim() + ':' + customProxyPort.value.trim())}`;
-                    proxyUrl += `&protocol=${proxyProtocolSelect.value}`;
-                }
-                
                 // 添加过滤选项
                 if (removeAdsToggle && removeAdsToggle.checked) proxyUrl += '&removeAds=true';
                 if (removeTrackersToggle && removeTrackersToggle.checked) proxyUrl += '&removeTrackers=true';
@@ -1414,59 +1362,11 @@
                 if (addWarningToggle && addWarningToggle.checked) proxyUrl += '&addWarning=true';
                 if (optimizeToggle && optimizeToggle.checked) proxyUrl += '&optimize=true';
                 
-                // 先尝试直接访问
-                const directUrl = proxyUrl;
-                const directWindow = window.open(directUrl, '_blank');
+                // 构建完整的炮灰域名URL
+                const fullUrl = window.location.protocol + '//' + cannonFodderDomain + proxyUrl;
                 
-                // 监听直接访问的结果
-                let directAccessFailed = false;
-                let retryWithCannon = false;
-                
-                // 创建一个检查函数
-                const checkDirectAccess = async () => {
-                    try {
-                        // 尝试发送一个请求来检查状态
-                        const checkResponse = await fetch(directUrl);
-                        const responseData = await checkResponse.json();
-                        
-                        if (!checkResponse.ok && responseData.shouldUseCannon) {
-                            directAccessFailed = true;
-                            retryWithCannon = true;
-                        }
-                    } catch (e) {
-                        directAccessFailed = true;
-                        retryWithCannon = true;
-                    }
-                    
-                    if (retryWithCannon) {
-                        // 构建完整的炮灰域名URL
-                        const fallbackUrl = window.location.protocol + '//' + cannonFodderDomain + proxyUrl;
-                        
-                        // 自动使用炮灰域名重试
-                        console.log('代理访问失败，自动使用炮灰域名重试');
-                        window.open(fallbackUrl, '_blank');
-                        
-                        // 尝试关闭之前的窗口
-                        try {
-                            if (directWindow && !directWindow.closed) {
-                                directWindow.close();
-                            }
-                        } catch (e) {
-                            console.error('无法关闭之前的窗口:', e);
-                        }
-                    }
-                };
-                
-                // 立即开始检查
-                checkDirectAccess();
-                
-                // 同时设置一个20秒的超时检查
-                setTimeout(() => {
-                    if (!directAccessFailed) {
-                        checkDirectAccess();
-                    }
-                }, 20000);
-                
+                // 在新标签页中打开炮灰域名URL
+                window.open(fullUrl, '_blank');
             } catch (error) {
                 console.error('加载失败:', error);
                 showError('加载失败: ' + error.message);
