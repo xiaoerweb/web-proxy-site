@@ -34,8 +34,32 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// 炮灰域名中间件
+app.use((req, res, next) => {
+    // 检查主机是否是炮灰域名
+    const host = req.hostname || '';
+    if (host.endsWith(CANNON_FODDER_DOMAIN) && host !== CANNON_FODDER_DOMAIN) {
+        console.log(`检测到炮灰域名请求: ${host}`);
+        // 将炮灰域名请求转发到正常处理逻辑
+        req.isCannonFodder = true;
+        req.cannonFodderHost = host;
+    }
+    next();
+});
+
 // 提供静态文件
 app.use(express.static(path.join(__dirname, 'public')));
+
+// 新增：生成随机炮灰域名
+app.get('/api/cannon-fodder-domain', (req, res) => {
+    const randomPrefix = Math.random().toString(36).substring(2, 10);
+    const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
+    
+    res.json({
+        success: true,
+        domain: cannonFodderHost
+    });
+});
 
 // 获取代理IP列表
 async function fetchProxyIPs(protocol = 'http', count = 20) {
@@ -158,8 +182,12 @@ app.post('/api/create-link', async (req, res) => {
             optimize
         });
         
-        // 构建代理链接
-        const proxyUrl = `${req.protocol}://${req.get('host')}/s/${session.id}?url=${encodeURIComponent(url)}`;
+        // 生成随机炮灰域名
+        const randomPrefix = Math.random().toString(36).substring(2, 10);
+        const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
+        
+        // 构建代理链接，使用炮灰域名
+        const proxyUrl = `${req.protocol}://${cannonFodderHost}/s/${session.id}?url=${encodeURIComponent(url)}`;
         
         res.json({
             success: true,
@@ -575,9 +603,15 @@ app.get('/proxy', async (req, res) => {
         return res.status(400).json({ error: '请提供目标URL' });
     }
 
-    // 生成随机子域名
-    const randomPrefix = Math.random().toString(36).substring(2, 10);
-    const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
+    // 使用请求中的炮灰域名或生成新的
+    let cannonFodderHost;
+    if (req.isCannonFodder && req.cannonFodderHost) {
+        cannonFodderHost = req.cannonFodderHost;
+    } else {
+        // 生成随机子域名
+        const randomPrefix = Math.random().toString(36).substring(2, 10);
+        cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
+    }
     
     try {
         // 解析目标URL
@@ -774,20 +808,23 @@ app.get('/proxy', async (req, res) => {
         if (error.code === 'ECONNABORTED') {
             return res.status(504).json({
                 error: '代理请求超时',
-                message: '请求目标网站超时，请稍后重试或尝试其他代理服务器'
+                message: '请求目标网站超时，请稍后重试或尝试其他代理服务器',
+                shouldUseCannon: true
             });
         }
         
         if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
             return res.status(502).json({
                 error: '代理服务器连接失败',
-                message: '无法连接到代理服务器，请尝试其他代理或直接访问'
+                message: '无法连接到代理服务器，请尝试其他代理或直接访问',
+                shouldUseCannon: true
             });
         }
         
         res.status(500).json({
             error: '代理请求失败',
-            message: error.message
+            message: error.message,
+            shouldUseCannon: true
         });
     }
 });
