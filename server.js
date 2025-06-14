@@ -6,18 +6,23 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const cheerio = require('cheerio');
 const zlib = require('zlib');
 const { minify } = require('terser');
 const CleanCSS = require('clean-css');
 const sharp = require('sharp');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 创建一个缓存实例，用于存储代理IP和优化后的资源
-const proxyCache = new NodeCache({ stdTTL: 600, checkperiod: 60 });
 const resourceCache = new NodeCache({ stdTTL: 3600, checkperiod: 300 });
+// 代理缓存，用于存储从API获取的代理IP
+const proxyCache = new NodeCache({ stdTTL: 1800, checkperiod: 300 }); // 30分钟过期
+// 会话缓存，用于存储代理会话信息，7天过期时间
+const sessionCache = new NodeCache({ stdTTL: 7 * 24 * 60 * 60, checkperiod: 3600 });
 
 // 炮灰域名配置
 const CANNON_FODDER_DOMAIN = process.env.CANNON_FODDER_DOMAIN || '4is.cc'; // 替换为您的域名，不要包含*或子域名
@@ -32,170 +37,191 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // 提供静态文件
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 代理IP列表
-let proxyIPs = [];
-// 按国家/地区分类的代理IP
-let proxyByCountry = {};
-
 // 获取代理IP列表
-async function fetchProxyIPs() {
-  const proxyApis = [
-    {
-      url: 'https://proxylist.geonode.com/api/proxy-list?limit=100&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=90&protocols=http,https',
-      parser: (data) => data.data.map(proxy => ({
-        ip: proxy.ip,
-        port: proxy.port,
-        protocol: proxy.protocols[0],
-        country: proxy.country,
-        countryCode: proxy.country_code,
-        city: proxy.city,
-        anonymity: proxy.anonymityLevel,
-        uptime: proxy.upTime,
-        speed: proxy.speed || 'medium'
-      }))
-    },
-    {
-      url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-      parser: (data) => data.split('\n').filter(line => line.trim()).map(line => {
-        const [ip, port] = line.split(':');
-        return {
-          ip,
-          port: parseInt(port),
-          protocol: 'http',
-          country: 'Unknown',
-          countryCode: 'XX',
-          city: 'Unknown',
-          anonymity: 'unknown',
-          uptime: 100,
-          speed: 'medium'
-        };
-      })
-    },
-    {
-      url: 'https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all&format=json',
-      parser: (data) => {
-        try {
-          const proxies = JSON.parse(data);
-          return proxies.map(proxy => ({
-            ip: proxy.ip,
-            port: proxy.port,
-            protocol: proxy.protocol,
-            country: proxy.country || 'Unknown',
-            countryCode: proxy.countryCode || 'XX',
-            city: 'Unknown',
-            anonymity: proxy.anonymity || 'unknown',
-            uptime: 100,
-            speed: 'medium'
-          }));
-        } catch (e) {
-          return [];
-        }
-      }
-    }
-  ];
-
-  let successfulFetch = false;
-  let newProxies = [];
-
-  for (const api of proxyApis) {
+async function fetchProxyIPs(protocol = 'http', count = 20) {
     try {
-      console.log(`尝试从 ${api.url} 获取代理IP...`);
-      const response = await axios.get(api.url, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        // 检查缓存
+        const cacheKey = `proxies-${protocol}-${count}`;
+        const cachedProxies = proxyCache.get(cacheKey);
+        
+        if (cachedProxies) {
+            console.log(`使用缓存的${protocol}代理IP列表`);
+            return cachedProxies;
         }
-      });
-
-      if (response.data) {
-        const parsedProxies = api.parser(response.data);
-        if (parsedProxies && parsedProxies.length > 0) {
-          newProxies = parsedProxies;
-          successfulFetch = true;
-          console.log(`成功从 ${api.url} 获取 ${newProxies.length} 个代理IP`);
-          break;
+        
+        console.log(`获取${protocol}代理IP列表...`);
+        
+        // 从scdn.io获取代理
+        try {
+            const scdnResponse = await axios.get(`https://proxy.scdn.io/api/get_proxy.php?protocol=${protocol}&count=${count}`, {
+                timeout: 10000
+            });
+            
+            if (scdnResponse.data && scdnResponse.data.code === 200 && scdnResponse.data.data && Array.isArray(scdnResponse.data.data.proxies)) {
+                const proxies = scdnResponse.data.data.proxies;
+                
+                if (proxies.length > 0) {
+                    console.log(`从scdn.io获取到${proxies.length}个${protocol}代理`);
+                    const result = { proxies: proxies, source: 'scdn.io' };
+                    proxyCache.set(cacheKey, result);
+                    return result;
+                }
+            }
+        } catch (scdnError) {
+            console.error('从scdn.io获取代理失败:', scdnError.message);
         }
-      }
+        
+        // 如果scdn.io失败，尝试从proxy.cc获取代理
+        try {
+            const proxyccResponse = await axios.get(`https://proxy.cc/detection/proxyList?limit=${count}&page=1&sort_by=lastChecked&sort_type=desc`, {
+                timeout: 10000
+            });
+            
+            if (proxyccResponse.data && proxyccResponse.data.data && Array.isArray(proxyccResponse.data.data)) {
+                const proxies = proxyccResponse.data.data
+                    .filter(proxy => proxy.protocols.includes(protocol.toLowerCase()))
+                    .map(proxy => `${proxy.ip}:${proxy.port}`);
+                
+                if (proxies.length > 0) {
+                    console.log(`从proxy.cc获取到${proxies.length}个${protocol}代理`);
+                    const result = { proxies: proxies, source: 'proxy.cc' };
+                    proxyCache.set(cacheKey, result);
+                    return result;
+                }
+            }
+        } catch (proxyccError) {
+            console.error('从proxy.cc获取代理失败:', proxyccError.message);
+        }
+        
+        // 所有源都失败，返回空数组
+        return { proxies: [], source: 'none' };
     } catch (error) {
-      console.error(`从 ${api.url} 获取代理IP失败:`, error.message);
-      continue;
+        console.error('获取代理IP失败:', error);
+        return { proxies: [], source: 'error' };
     }
-  }
-
-  if (!successfulFetch) {
-    console.error('所有代理源获取失败，尝试使用缓存');
-    const cachedProxies = proxyCache.get('proxyList');
-    if (cachedProxies) {
-      newProxies = cachedProxies;
-      console.log(`从缓存中获取 ${newProxies.length} 个代理IP`);
-    }
-  }
-
-  // 更新代理IP列表
-  proxyIPs = newProxies.filter(proxy => proxy.protocol === 'http' || proxy.protocol === 'https');
-  
-  // 按国家/地区分类
-  proxyByCountry = {};
-  proxyIPs.forEach(proxy => {
-    if (!proxyByCountry[proxy.countryCode]) {
-      proxyByCountry[proxy.countryCode] = [];
-    }
-    proxyByCountry[proxy.countryCode].push(proxy);
-  });
-  
-  // 缓存代理IP列表
-  if (proxyIPs.length > 0) {
-    proxyCache.set('proxyList', proxyIPs);
-    proxyCache.set('proxyByCountry', proxyByCountry);
-  }
-
-  // 返回代理IP数量
-  return proxyIPs.length;
 }
 
-// 初始获取代理IP
-fetchProxyIPs();
-
-// 每10分钟刷新一次代理IP列表
-setInterval(fetchProxyIPs, 10 * 60 * 1000);
-
-// 获取随机代理IP
-function getRandomProxy(countryCode = null) {
-  if (proxyIPs.length === 0) {
-    return null;
-  }
-  
-  // 如果指定了国家/地区代码
-  if (countryCode && proxyByCountry[countryCode] && proxyByCountry[countryCode].length > 0) {
-    const countryProxies = proxyByCountry[countryCode];
-    const randomIndex = Math.floor(Math.random() * countryProxies.length);
-    return countryProxies[randomIndex];
-  }
-  
-  // 否则随机选择
-  const randomIndex = Math.floor(Math.random() * proxyIPs.length);
-  return proxyIPs[randomIndex];
+// 新增：生成唯一会话ID
+function generateSessionId() {
+    return crypto.randomBytes(16).toString('hex');
 }
 
-// 获取代理IP列表的API
-app.get('/api/proxies', async (req, res) => {
-  try {
-    const protocol = req.query.protocol || 'https';
-    const count = protocol === 'https' ? 20 : 2;
+// 新增：创建代理会话
+function createProxySession(proxyConfig) {
+    const sessionId = generateSessionId();
+    const expiresAt = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7天后过期
     
-    const response = await axios.get(`https://proxy.scdn.io/api/get_proxy.php?protocol=${protocol}&count=${count}`, {
-      timeout: 10000
-    });
+    const session = {
+        id: sessionId,
+        proxy: proxyConfig.proxy || null,
+        protocol: proxyConfig.protocol || 'https',
+        createdAt: Date.now(),
+        expiresAt: expiresAt,
+        settings: {
+            removeAds: proxyConfig.removeAds || false,
+            removeTrackers: proxyConfig.removeTrackers || false,
+            removeSensitive: proxyConfig.removeSensitive || false,
+            addWarning: proxyConfig.addWarning || false,
+            optimize: proxyConfig.optimize || false
+        }
+    };
     
-    // 直接返回API的响应数据
-    res.json(response.data);
-  } catch (error) {
-    console.error('获取代理列表失败:', error);
-    res.status(500).json({
-      error: '获取代理列表失败',
-      message: error.message
-    });
-  }
+    // 存储会话
+    sessionCache.set(sessionId, session);
+    
+    return session;
+}
+
+// 新增：获取会话信息
+function getProxySession(sessionId) {
+    if (!sessionId) return null;
+    return sessionCache.get(sessionId);
+}
+
+// 新增：生成代理链接
+app.post('/api/create-link', async (req, res) => {
+    try {
+        const { url, proxy, protocol, removeAds, removeTrackers, removeSensitive, addWarning, optimize } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({ error: '请提供目标URL' });
+        }
+        
+        // 创建会话
+        const session = createProxySession({
+            proxy,
+            protocol,
+            removeAds,
+            removeTrackers,
+            removeSensitive,
+            addWarning,
+            optimize
+        });
+        
+        // 构建代理链接
+        const proxyUrl = `${req.protocol}://${req.get('host')}/s/${session.id}?url=${encodeURIComponent(url)}`;
+        
+        res.json({
+            success: true,
+            sessionId: session.id,
+            proxyUrl,
+            expiresAt: session.expiresAt
+        });
+    } catch (error) {
+        console.error('创建代理链接失败:', error);
+        res.status(500).json({
+            error: '创建代理链接失败',
+            message: error.message
+        });
+    }
+});
+
+// 新增：会话代理路由
+app.get('/s/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const { url } = req.query;
+    
+    if (!url) {
+        return res.status(400).json({ error: '请提供目标URL' });
+    }
+    
+    // 获取会话
+    const session = getProxySession(sessionId);
+    if (!session) {
+        return res.status(404).json({ error: '会话已过期或不存在' });
+    }
+    
+    // 检查会话是否过期
+    if (session.expiresAt < Date.now()) {
+        sessionCache.del(sessionId);
+        return res.status(410).json({ error: '会话已过期' });
+    }
+    
+    try {
+        // 构建代理请求参数
+        const proxyParams = new URLSearchParams();
+        proxyParams.append('url', url);
+        
+        if (session.proxy) {
+            proxyParams.append('proxy', session.proxy);
+            proxyParams.append('protocol', session.protocol);
+        }
+        
+        if (session.settings.removeAds) proxyParams.append('removeAds', 'true');
+        if (session.settings.removeTrackers) proxyParams.append('removeTrackers', 'true');
+        if (session.settings.removeSensitive) proxyParams.append('removeSensitive', 'true');
+        if (session.settings.addWarning) proxyParams.append('addWarning', 'true');
+        if (session.settings.optimize) proxyParams.append('optimize', 'true');
+        
+        // 重定向到代理路由
+        res.redirect(`/proxy?${proxyParams.toString()}`);
+    } catch (error) {
+        console.error('会话代理请求失败:', error);
+        res.status(500).json({
+            error: '会话代理请求失败',
+            message: error.message
+        });
+    }
 });
 
 // 获取国家名称
@@ -211,6 +237,32 @@ function getCountryName(countryCode) {
   
   return countries[countryCode] || countryCode;
 }
+
+// API端点：获取代理IP列表
+app.get('/api/proxies', async (req, res) => {
+    try {
+        const protocol = req.query.protocol || 'http';
+        const count = parseInt(req.query.count) || 20;
+        
+        // 获取代理IP
+        const result = await fetchProxyIPs(protocol, count);
+        
+        res.json({
+            success: true,
+            data: {
+                proxies: result.proxies,
+                source: result.source,
+                timestamp: Date.now()
+            }
+        });
+    } catch (error) {
+        console.error('获取代理列表失败:', error);
+        res.status(500).json({
+            error: '获取代理列表失败',
+            message: error.message
+        });
+    }
+});
 
 // 内容过滤函数
 function filterContent(html, filters = {}) {
@@ -515,215 +567,229 @@ app.get('/resource-proxy', async (req, res) => {
 
 // 代理请求处理
 app.get('/proxy', async (req, res) => {
-  const targetUrl = req.query.url;
-  const useProxy = req.query.proxy;
-  const protocol = req.query.protocol || 'https';
-  
-  if (!targetUrl) {
-    return res.status(400).json({ error: '请提供目标URL' });
-  }
-
-  // 生成随机子域名
-  const randomPrefix = Math.random().toString(36).substring(2, 10);
-  const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
-  
-  try {
-    // 解析目标URL
-    const parsedUrl = new URL(targetUrl);
+    const targetUrl = req.query.url;
+    const useProxy = req.query.proxy;
+    const protocol = req.query.protocol || 'https';
     
-    // 设置请求选项
-    const requestOptions = {
-      timeout: 30000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Host': parsedUrl.host // 保持原始Host头
-      },
-      validateStatus: false // 不抛出HTTP错误
-    };
+    if (!targetUrl) {
+        return res.status(400).json({ error: '请提供目标URL' });
+    }
 
-    // 如果提供了代理，设置代理
-    if (useProxy) {
-      const [proxyHost, proxyPort] = useProxy.split(':');
-      if (protocol === 'https') {
-        requestOptions.httpsAgent = new HttpsProxyAgent(`${protocol}://${proxyHost}:${proxyPort}`);
-      } else {
-        requestOptions.proxy = {
-          host: proxyHost,
-          port: proxyPort,
-          protocol: protocol
+    // 生成随机子域名
+    const randomPrefix = Math.random().toString(36).substring(2, 10);
+    const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
+    
+    try {
+        // 解析目标URL
+        const parsedUrl = new URL(targetUrl);
+        
+        // 设置请求选项
+        const requestOptions = {
+            timeout: 30000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Host': parsedUrl.host // 保持原始Host头
+            },
+            validateStatus: false // 不抛出HTTP错误
         };
-      }
-      console.log(`使用代理: ${protocol}://${proxyHost}:${proxyPort}`);
-    }
 
-    console.log(`请求目标URL: ${targetUrl}`);
-    console.log(`使用炮灰域名: ${cannonFodderHost}`);
-
-    // 发送请求
-    const response = await axios({
-      method: 'get',
-      url: targetUrl,
-      ...requestOptions
-    });
-
-    // 设置响应头
-    res.set('Content-Type', response.headers['content-type'] || 'text/html');
-    
-    // 如果是HTML内容，进行处理
-    if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
-      let html = response.data;
-      
-      // 替换所有域名引用为炮灰域名
-      const $ = cheerio.load(html);
-      
-      // 替换所有链接
-      $('a').each((i, el) => {
-        const href = $(el).attr('href');
-        if (href) {
-          try {
-            // 处理相对URL和绝对URL
-            let absoluteUrl = href;
-            if (!href.startsWith('http') && !href.startsWith('//')) {
-              // 相对URL，转换为绝对URL
-              if (href.startsWith('/')) {
-                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${href}`;
-              } else {
-                const baseDir = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
-                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${baseDir}${href}`;
-              }
-            } else if (href.startsWith('//')) {
-              // 协议相对URL
-              absoluteUrl = `${parsedUrl.protocol}${href}`;
+        // 如果提供了代理，设置代理
+        if (useProxy) {
+            const [proxyHost, proxyPort] = useProxy.split(':');
+            
+            // 根据协议类型设置不同的代理
+            switch (protocol.toLowerCase()) {
+                case 'socks4':
+                    requestOptions.httpsAgent = new SocksProxyAgent(`socks4://${proxyHost}:${proxyPort}`);
+                    break;
+                case 'socks5':
+                    requestOptions.httpsAgent = new SocksProxyAgent(`socks5://${proxyHost}:${proxyPort}`);
+                    break;
+                case 'https':
+                    requestOptions.httpsAgent = new HttpsProxyAgent(`${protocol}://${proxyHost}:${proxyPort}`);
+                    break;
+                case 'http':
+                    requestOptions.proxy = {
+                        host: proxyHost,
+                        port: proxyPort,
+                        protocol: protocol
+                    };
+                    break;
+                default:
+                    throw new Error('不支持的代理协议');
             }
             
-            // 将原始域名替换为炮灰域名
-            if (absoluteUrl.includes(parsedUrl.host)) {
-              const newUrl = absoluteUrl.replace(parsedUrl.host, cannonFodderHost);
-              $(el).attr('href', newUrl);
-            }
-          } catch (e) {
-            console.error('处理链接时出错:', e);
-          }
+            console.log(`使用${protocol.toUpperCase()}代理: ${proxyHost}:${proxyPort}`);
         }
-      });
-      
-      // 替换所有资源链接
-      $('img, script, link, iframe, source').each((i, el) => {
-        const src = $(el).attr('src') || $(el).attr('href');
-        if (src) {
-          try {
-            // 处理相对URL和绝对URL
-            let absoluteUrl = src;
-            if (!src.startsWith('http') && !src.startsWith('//')) {
-              // 相对URL，转换为绝对URL
-              if (src.startsWith('/')) {
-                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${src}`;
-              } else {
-                const baseDir = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
-                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${baseDir}${src}`;
-              }
-            } else if (src.startsWith('//')) {
-              // 协议相对URL
-              absoluteUrl = `${parsedUrl.protocol}${src}`;
+
+        console.log(`请求目标URL: ${targetUrl}`);
+        console.log(`使用炮灰域名: ${cannonFodderHost}`);
+
+        // 发送请求
+        const response = await axios({
+            method: 'get',
+            url: targetUrl,
+            ...requestOptions
+        });
+
+        // 设置响应头
+        res.set('Content-Type', response.headers['content-type'] || 'text/html');
+        
+        // 如果是HTML内容，进行处理
+        if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
+            let html = response.data;
+            
+            // 替换所有域名引用为炮灰域名
+            const $ = cheerio.load(html);
+            
+            // 替换所有链接
+            $('a').each((i, el) => {
+                const href = $(el).attr('href');
+                if (href) {
+                    try {
+                        // 处理相对URL和绝对URL
+                        let absoluteUrl = href;
+                        if (!href.startsWith('http') && !href.startsWith('//')) {
+                            // 相对URL，转换为绝对URL
+                            if (href.startsWith('/')) {
+                                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${href}`;
+                            } else {
+                                const baseDir = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
+                                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${baseDir}${href}`;
+                            }
+                        } else if (href.startsWith('//')) {
+                            // 协议相对URL
+                            absoluteUrl = `${parsedUrl.protocol}${href}`;
+                        }
+                        
+                        // 将原始域名替换为炮灰域名
+                        if (absoluteUrl.includes(parsedUrl.host)) {
+                            const newUrl = absoluteUrl.replace(parsedUrl.host, cannonFodderHost);
+                            $(el).attr('href', newUrl);
+                        }
+                    } catch (e) {
+                        console.error('处理链接时出错:', e);
+                    }
+                }
+            });
+            
+            // 替换所有资源链接
+            $('img, script, link, iframe, source').each((i, el) => {
+                const src = $(el).attr('src') || $(el).attr('href');
+                if (src) {
+                    try {
+                        // 处理相对URL和绝对URL
+                        let absoluteUrl = src;
+                        if (!src.startsWith('http') && !src.startsWith('//')) {
+                            // 相对URL，转换为绝对URL
+                            if (src.startsWith('/')) {
+                                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${src}`;
+                            } else {
+                                const baseDir = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
+                                absoluteUrl = `${parsedUrl.protocol}//${parsedUrl.host}${baseDir}${src}`;
+                            }
+                        } else if (src.startsWith('//')) {
+                            // 协议相对URL
+                            absoluteUrl = `${parsedUrl.protocol}${src}`;
+                        }
+                        
+                        // 将原始域名替换为炮灰域名
+                        if (absoluteUrl.includes(parsedUrl.host)) {
+                            const newUrl = absoluteUrl.replace(parsedUrl.host, cannonFodderHost);
+                            if ($(el).attr('src')) {
+                                $(el).attr('src', newUrl);
+                            } else {
+                                $(el).attr('href', newUrl);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('处理资源链接时出错:', e);
+                    }
+                }
+            });
+            
+            // 替换内联样式中的URL
+            $('[style]').each((i, el) => {
+                const style = $(el).attr('style');
+                if (style && style.includes('url(')) {
+                    try {
+                        const newStyle = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
+                            if (url.includes(parsedUrl.host)) {
+                                return `url(${url.replace(parsedUrl.host, cannonFodderHost)})`;
+                            }
+                            return match;
+                        });
+                        $(el).attr('style', newStyle);
+                    } catch (e) {
+                        console.error('处理内联样式时出错:', e);
+                    }
+                }
+            });
+            
+            // 替换CSS中的URL
+            $('style').each((i, el) => {
+                const css = $(el).html();
+                if (css && css.includes('url(')) {
+                    try {
+                        const newCss = css.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
+                            if (url.includes(parsedUrl.host)) {
+                                return `url(${url.replace(parsedUrl.host, cannonFodderHost)})`;
+                            }
+                            return match;
+                        });
+                        $(el).html(newCss);
+                    } catch (e) {
+                        console.error('处理CSS时出错:', e);
+                    }
+                }
+            });
+            
+            // 替换base标签
+            $('base').each((i, el) => {
+                const href = $(el).attr('href');
+                if (href && href.includes(parsedUrl.host)) {
+                    $(el).attr('href', href.replace(parsedUrl.host, cannonFodderHost));
+                }
+            });
+            
+            // 如果启用了广告过滤
+            if (req.query.removeAds === 'true') {
+                html = filterContent($.html(), { removeAds: true });
+            } else if (req.query.removeTrackers === 'true') {
+                html = filterContent($.html(), { removeTrackers: true });
+            } else {
+                html = $.html();
             }
             
-            // 将原始域名替换为炮灰域名
-            if (absoluteUrl.includes(parsedUrl.host)) {
-              const newUrl = absoluteUrl.replace(parsedUrl.host, cannonFodderHost);
-              if ($(el).attr('src')) {
-                $(el).attr('src', newUrl);
-              } else {
-                $(el).attr('href', newUrl);
-              }
-            }
-          } catch (e) {
-            console.error('处理资源链接时出错:', e);
-          }
+            res.send(html);
+        } else {
+            // 对于非HTML内容，直接转发
+            res.send(response.data);
         }
-      });
-      
-      // 替换内联样式中的URL
-      $('[style]').each((i, el) => {
-        const style = $(el).attr('style');
-        if (style && style.includes('url(')) {
-          try {
-            const newStyle = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
-              if (url.includes(parsedUrl.host)) {
-                return `url(${url.replace(parsedUrl.host, cannonFodderHost)})`;
-              }
-              return match;
+    } catch (error) {
+        console.error('代理请求失败:', error.message);
+        
+        if (error.code === 'ECONNABORTED') {
+            return res.status(504).json({
+                error: '代理请求超时',
+                message: '请求目标网站超时，请稍后重试或尝试其他代理服务器'
             });
-            $(el).attr('style', newStyle);
-          } catch (e) {
-            console.error('处理内联样式时出错:', e);
-          }
         }
-      });
-      
-      // 替换CSS中的URL
-      $('style').each((i, el) => {
-        const css = $(el).html();
-        if (css && css.includes('url(')) {
-          try {
-            const newCss = css.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
-              if (url.includes(parsedUrl.host)) {
-                return `url(${url.replace(parsedUrl.host, cannonFodderHost)})`;
-              }
-              return match;
+        
+        if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
+            return res.status(502).json({
+                error: '代理服务器连接失败',
+                message: '无法连接到代理服务器，请尝试其他代理或直接访问'
             });
-            $(el).html(newCss);
-          } catch (e) {
-            console.error('处理CSS时出错:', e);
-          }
         }
-      });
-      
-      // 替换base标签
-      $('base').each((i, el) => {
-        const href = $(el).attr('href');
-        if (href && href.includes(parsedUrl.host)) {
-          $(el).attr('href', href.replace(parsedUrl.host, cannonFodderHost));
-        }
-      });
-      
-      // 如果启用了广告过滤
-      if (req.query.removeAds === 'true') {
-        html = filterContent($.html(), { removeAds: true });
-      } else if (req.query.removeTrackers === 'true') {
-        html = filterContent($.html(), { removeTrackers: true });
-      } else {
-        html = $.html();
-      }
-      
-      res.send(html);
-    } else {
-      // 对于非HTML内容，直接转发
-      res.send(response.data);
+        
+        res.status(500).json({
+            error: '代理请求失败',
+            message: error.message
+        });
     }
-  } catch (error) {
-    console.error('代理请求失败:', error.message);
-    
-    if (error.code === 'ECONNABORTED') {
-      return res.status(504).json({
-        error: '代理请求超时',
-        message: '请求目标网站超时，请稍后重试或尝试其他代理服务器'
-      });
-    }
-    
-    if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
-      return res.status(502).json({
-        error: '代理服务器连接失败',
-        message: '无法连接到代理服务器，请尝试其他代理或直接访问'
-      });
-    }
-    
-    res.status(500).json({
-      error: '代理请求失败',
-      message: error.message
-    });
-  }
 });
 
 // 主页路由
@@ -736,93 +802,54 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 调试路由 - 查看代理状态
-app.get('/debug/proxies', (req, res) => {
-  res.setHeader('Content-Type', 'text/html');
-  res.write(`
-    <html>
-      <head>
-        <title>代理调试</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f2f2f2; }
-          tr:nth-child(even) { background-color: #f9f9f9; }
-          .refresh { background-color: #4CAF50; color: white; border: none; padding: 10px 15px; cursor: pointer; }
-        </style>
-      </head>
-      <body>
-        <h1>代理服务器调试</h1>
-        <p>当前时间: ${new Date().toISOString()}</p>
-        <p>代理IP总数: ${proxyIPs.length}</p>
-        <p>国家/地区数: ${Object.keys(proxyByCountry).length}</p>
-        <button class="refresh" onclick="window.location.reload()">刷新</button>
-        <button class="refresh" onclick="window.location.href='/debug/proxies?refresh=true'">强制刷新代理</button>
-        <h2>代理IP列表 (前20个)</h2>
-        <table>
-          <tr>
-            <th>IP</th>
-            <th>端口</th>
-            <th>协议</th>
-            <th>国家</th>
-            <th>城市</th>
-            <th>匿名度</th>
-            <th>在线率</th>
-          </tr>
-  `);
-
-  // 显示前20个代理
-  const proxiesToShow = proxyIPs.slice(0, 20);
-  proxiesToShow.forEach(proxy => {
-    res.write(`
-      <tr>
-        <td>${proxy.ip}</td>
-        <td>${proxy.port}</td>
-        <td>${proxy.protocol}</td>
-        <td>${proxy.country} (${proxy.countryCode})</td>
-        <td>${proxy.city || 'N/A'}</td>
-        <td>${proxy.anonymity}</td>
-        <td>${proxy.uptime}%</td>
-      </tr>
-    `);
-  });
-
-  res.write(`
-        </table>
-        <h2>按国家/地区分类</h2>
-        <table>
-          <tr>
-            <th>国家/地区</th>
-            <th>代理数量</th>
-          </tr>
-  `);
-
-  // 显示国家/地区统计
-  Object.keys(proxyByCountry).forEach(code => {
-    const countryName = getCountryName(code);
-    const count = proxyByCountry[code].length;
-    res.write(`
-      <tr>
-        <td>${countryName} (${code})</td>
-        <td>${count}</td>
-      </tr>
-    `);
-  });
-
-  res.write(`
-        </table>
-      </body>
-    </html>
-  `);
-  res.end();
-
-  // 如果请求中包含refresh=true参数，刷新代理列表
-  if (req.query.refresh === 'true') {
-    fetchProxyIPs().then(count => {
-      console.log(`调试页面触发刷新，获取到 ${count} 个代理IP`);
+// 新增：会话管理API
+app.get('/api/sessions/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    const session = getProxySession(sessionId);
+    
+    if (!session) {
+        return res.status(404).json({ error: '会话不存在或已过期' });
+    }
+    
+    res.json({
+        success: true,
+        session: {
+            id: session.id,
+            createdAt: session.createdAt,
+            expiresAt: session.expiresAt,
+            settings: session.settings
+        }
     });
-  }
+});
+
+// 新增：会话列表API (仅限管理员)
+app.get('/api/sessions', (req, res) => {
+    // 简单的管理员验证
+    const adminKey = req.query.adminKey;
+    if (adminKey !== process.env.ADMIN_KEY) {
+        return res.status(403).json({ error: '未授权访问' });
+    }
+    
+    const sessions = [];
+    const sessionKeys = sessionCache.keys();
+    
+    for (const key of sessionKeys) {
+        const session = sessionCache.get(key);
+        if (session) {
+            sessions.push({
+                id: session.id,
+                createdAt: session.createdAt,
+                expiresAt: session.expiresAt,
+                isExpired: session.expiresAt < Date.now()
+            });
+        }
+    }
+    
+    res.json({
+        success: true,
+        total: sessions.length,
+        sessions
+    });
 });
 
 // 处理 404
