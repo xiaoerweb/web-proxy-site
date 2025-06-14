@@ -23,8 +23,32 @@ const sessionCache = new NodeCache({ stdTTL: 7 * 24 * 60 * 60, checkperiod: 3600
 // 炮灰域名配置
 const CANNON_FODDER_DOMAIN = process.env.CANNON_FODDER_DOMAIN || '4is.cc';
 
-// 启用CORS
-app.use(cors());
+// 启用CORS，添加更多选项
+app.use(cors({
+    origin: function(origin, callback) {
+        // 允许所有域名访问，包括炮灰域名
+        callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    exposedHeaders: ['Content-Disposition']
+}));
+
+// 添加安全头
+app.use((req, res, next) => {
+    // 允许在iframe中加载
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    // 允许跨域资源共享
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    // 允许跨域携带凭证
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    // 允许的请求方法
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    // 允许的请求头
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept,Origin');
+    next();
+});
 
 // 解析请求体
 app.use(bodyParser.json());
@@ -369,6 +393,46 @@ app.get('/proxy', async (req, res) => {
             // 添加基础URL元标签，帮助解析相对URL
             $('head').prepend(`<base href="${targetUrl}">`);
             
+            // 添加CSP策略，允许加载资源
+            $('head').prepend(`<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">`);
+            
+            // 添加Vue.js路由支持的meta标签
+            $('head').append(`
+                <script>
+                    // 初始化全局变量
+                    window.LA = window.LA || {};
+                    window.LA.meta = window.LA.meta || {};
+                    
+                    // 处理路由
+                    window.addEventListener('load', function() {
+                        if (window.Vue && window.VueRouter) {
+                            const router = window.VueRouter;
+                            const originalPush = router.prototype.push;
+                            const originalReplace = router.prototype.replace;
+                            
+                            // 重写路由方法，处理跨域问题
+                            router.prototype.push = function(location) {
+                                try {
+                                    return originalPush.call(this, location).catch(err => err);
+                                } catch (err) {
+                                    console.warn('Router push error:', err);
+                                    return Promise.resolve(err);
+                                }
+                            };
+                            
+                            router.prototype.replace = function(location) {
+                                try {
+                                    return originalReplace.call(this, location).catch(err => err);
+                                } catch (err) {
+                                    console.warn('Router replace error:', err);
+                                    return Promise.resolve(err);
+                                }
+                            };
+                        }
+                    });
+                </script>
+            `);
+            
             // 替换所有链接为代理链接
             $('a').each((i, el) => {
                 const href = $(el).attr('href');
@@ -397,13 +461,18 @@ app.get('/proxy', async (req, res) => {
                         if (['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.json'].includes(ext)) {
                             // 提取路径部分
                             const urlPath = new URL(absoluteUrl).pathname;
-                            // 创建一个资源URL，包含原始URL作为参数
+                            // 创建一个资源URL，包含原始URL和基础URL作为参数
                             const resourceUrl = `${urlPath}?originalUrl=${encodeURIComponent(absoluteUrl)}&baseUrl=${encodeURIComponent(targetUrl)}`;
                             
                             if ($(el).attr('src')) {
                                 $(el).attr('src', resourceUrl);
                             } else {
                                 $(el).attr('href', resourceUrl);
+                            }
+                            
+                            // 对于JavaScript文件，添加crossorigin属性
+                            if (ext === '.js') {
+                                $(el).attr('crossorigin', 'anonymous');
                             }
                         } else {
                             // 其他资源使用代理
