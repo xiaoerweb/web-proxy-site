@@ -355,6 +355,23 @@ app.get('/proxy', async (req, res) => {
         return res.status(400).json({ error: '请提供目标URL' });
     }
     
+    // 检查是否是对原始网站代理路径的请求
+    if (targetUrl.includes('/proxy?url=')) {
+        console.log(`检测到嵌套代理请求: ${targetUrl}`);
+        try {
+            // 提取真正的目标URL
+            const nestedUrl = new URL(targetUrl);
+            const actualTargetUrl = nestedUrl.searchParams.get('url');
+            if (actualTargetUrl) {
+                console.log(`重定向到实际目标URL: ${actualTargetUrl}`);
+                // 重定向到正确的代理URL
+                return res.redirect(`/proxy?url=${encodeURIComponent(actualTargetUrl)}`);
+            }
+        } catch (e) {
+            console.error(`解析嵌套代理URL失败: ${e.message}`);
+        }
+    }
+    
     try {
         // 解析目标URL
         const parsedUrl = new URL(targetUrl);
@@ -389,7 +406,27 @@ app.get('/proxy', async (req, res) => {
         
         // 如果是HTML内容，进行处理
         if (contentType.includes('text/html')) {
-            let html = response.data.toString('utf-8');
+            // 尝试检测正确的字符编码
+            let encoding = 'utf-8';
+            const contentTypeHeader = response.headers['content-type'] || '';
+            const charsetMatch = contentTypeHeader.match(/charset=([^;]+)/i);
+            if (charsetMatch && charsetMatch[1]) {
+                encoding = charsetMatch[1];
+            }
+            
+            // 使用检测到的编码解码响应数据
+            let html = '';
+            try {
+                html = response.data.toString(encoding);
+            } catch (e) {
+                console.warn(`使用 ${encoding} 解码失败，回退到 utf-8: ${e.message}`);
+                html = response.data.toString('utf-8');
+            }
+            
+            // 修复可能的HTML语法错误
+            html = html.replace(/<script>document\.write\(/g, '<script>try{document.write(')
+                       .replace(/\)<\/script>/g, ')}catch(e){console.error(e);}</script>');
+            
             const $ = cheerio.load(html);
             
             // 获取当前的炮灰域名
@@ -459,9 +496,16 @@ app.get('/proxy', async (req, res) => {
                 const src = $(el).attr('src') || $(el).attr('href');
                 if (src) {
                     try {
+                        // 构建绝对URL
                         const absoluteUrl = new URL(src, targetUrl).href;
                         
-                        // 所有资源都使用代理URL
+                        // 确保我们不会创建指向原始网站代理路径的URL
+                        if (absoluteUrl.includes('/proxy?url=')) {
+                            console.log(`跳过已经是代理URL的资源: ${absoluteUrl}`);
+                            return;
+                        }
+                        
+                        // 创建我们自己的代理URL
                         const proxyUrl = `/proxy?url=${encodeURIComponent(absoluteUrl)}`;
                         
                         if ($(el).attr('src')) {
@@ -474,7 +518,6 @@ app.get('/proxy', async (req, res) => {
                             $(el).attr('href', proxyUrl);
                         }
                     } catch (e) {
-                        // 忽略无效的URL
                         console.error(`处理资源链接失败: ${e.message}`);
                     }
                 }
@@ -520,7 +563,8 @@ app.get('/proxy', async (req, res) => {
         console.error('请求失败:', error);
         res.status(500).json({
             error: '请求失败',
-            message: error.message
+            message: error.message,
+            url: targetUrl
         });
     }
 });
