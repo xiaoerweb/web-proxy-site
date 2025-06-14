@@ -43,7 +43,7 @@ app.use((req, res, next) => {
 });
 
 // 处理静态资源请求
-app.get('/static/*', async (req, res) => {
+app.get('/static/*', async (req, res, next) => {
     try {
         console.log(`处理静态资源请求: ${req.path}`);
         
@@ -70,50 +70,74 @@ app.get('/static/*', async (req, res) => {
         const originalUrl = req.query.originalUrl;
         if (originalUrl) {
             console.log(`从源站获取静态资源: ${originalUrl}`);
-            const response = await axios.get(originalUrl, {
-                responseType: 'arraybuffer',
-                timeout: 10000,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            try {
+                const response = await axios.get(originalUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 10000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    },
+                    validateStatus: false // 不抛出HTTP错误
+                });
+                
+                // 检查响应状态
+                if (response.status !== 200) {
+                    console.error(`源站返回非200状态码: ${response.status}`);
+                    return res.status(response.status).send(`源站返回错误: ${response.status}`);
                 }
-            });
-            
-            // 设置适当的内容类型
-            const contentType = response.headers['content-type'];
-            if (contentType) {
-                res.set('Content-Type', contentType);
-            } else {
-                // 根据文件扩展名设置内容类型
-                const ext = path.extname(req.path).toLowerCase();
-                switch (ext) {
-                    case '.js':
-                        res.set('Content-Type', 'application/javascript');
-                        break;
-                    case '.css':
-                        res.set('Content-Type', 'text/css');
-                        break;
-                    case '.png':
-                        res.set('Content-Type', 'image/png');
-                        break;
-                    case '.jpg':
-                    case '.jpeg':
-                        res.set('Content-Type', 'image/jpeg');
-                        break;
-                    case '.gif':
-                        res.set('Content-Type', 'image/gif');
-                        break;
-                    case '.svg':
-                        res.set('Content-Type', 'image/svg+xml');
-                        break;
-                    default:
-                        res.set('Content-Type', 'application/octet-stream');
+                
+                // 设置适当的内容类型
+                const contentType = response.headers['content-type'];
+                if (contentType) {
+                    res.set('Content-Type', contentType);
+                } else {
+                    // 根据文件扩展名设置内容类型
+                    const ext = path.extname(req.path).toLowerCase();
+                    switch (ext) {
+                        case '.js':
+                            res.set('Content-Type', 'application/javascript');
+                            break;
+                        case '.css':
+                            res.set('Content-Type', 'text/css');
+                            break;
+                        case '.png':
+                            res.set('Content-Type', 'image/png');
+                            break;
+                        case '.jpg':
+                        case '.jpeg':
+                            res.set('Content-Type', 'image/jpeg');
+                            break;
+                        case '.gif':
+                            res.set('Content-Type', 'image/gif');
+                            break;
+                        case '.svg':
+                            res.set('Content-Type', 'image/svg+xml');
+                            break;
+                        case '.json':
+                            res.set('Content-Type', 'application/json');
+                            break;
+                        case '.woff':
+                            res.set('Content-Type', 'font/woff');
+                            break;
+                        case '.woff2':
+                            res.set('Content-Type', 'font/woff2');
+                            break;
+                        case '.ttf':
+                            res.set('Content-Type', 'font/ttf');
+                            break;
+                        default:
+                            res.set('Content-Type', 'application/octet-stream');
+                    }
                 }
+                
+                // 缓存控制
+                res.set('Cache-Control', 'public, max-age=86400'); // 24小时缓存
+                
+                return res.send(response.data);
+            } catch (fetchError) {
+                console.error(`获取源站资源失败: ${fetchError.message}`);
+                return res.status(502).send(`获取源站资源失败: ${fetchError.message}`);
             }
-            
-            // 缓存控制
-            res.set('Cache-Control', 'public, max-age=86400'); // 24小时缓存
-            
-            return res.send(response.data);
         }
         
         // 如果无法获取资源，返回404
@@ -123,6 +147,167 @@ app.get('/static/*', async (req, res) => {
         res.status(500).send('静态资源请求处理失败');
     }
 });
+
+// 添加对根路径下的JS、CSS和其他静态资源的处理
+app.get('/*.js', handleDirectResourceRequest);
+app.get('/*.css', handleDirectResourceRequest);
+app.get('/*.json', handleDirectResourceRequest);
+app.get('/*.png', handleDirectResourceRequest);
+app.get('/*.jpg', handleDirectResourceRequest);
+app.get('/*.jpeg', handleDirectResourceRequest);
+app.get('/*.gif', handleDirectResourceRequest);
+app.get('/*.svg', handleDirectResourceRequest);
+app.get('/*.woff', handleDirectResourceRequest);
+app.get('/*.woff2', handleDirectResourceRequest);
+app.get('/*.ttf', handleDirectResourceRequest);
+
+// 处理直接资源请求的函数
+async function handleDirectResourceRequest(req, res) {
+    try {
+        // 检查请求是否来自炮灰域名
+        if (!req.isCannonFodder) {
+            return res.status(404).send('资源未找到');
+        }
+        
+        console.log(`处理直接资源请求: ${req.path}`);
+        
+        // 尝试从本地获取资源
+        const localPath = path.join(__dirname, 'public', req.path);
+        
+        // 检查文件是否存在
+        try {
+            if (require('fs').existsSync(localPath)) {
+                console.log(`提供本地资源: ${localPath}`);
+                return res.sendFile(localPath);
+            }
+        } catch (err) {
+            console.error(`检查本地文件失败: ${err.message}`);
+        }
+        
+        // 获取原始URL（从Referer或查询参数）
+        let originalUrl = null;
+        let baseUrl = null;
+        
+        // 从Referer中提取原始域名
+        const referer = req.headers.referer;
+        if (referer) {
+            try {
+                const refererUrl = new URL(referer);
+                // 检查是否包含proxy参数
+                const urlParams = new URLSearchParams(refererUrl.search);
+                const proxyTarget = urlParams.get('url');
+                if (proxyTarget) {
+                    baseUrl = proxyTarget;
+                }
+            } catch (e) {
+                console.error(`解析Referer失败: ${e.message}`);
+            }
+        }
+        
+        // 如果没有从Referer获取到，尝试从查询参数获取
+        if (!baseUrl && req.query.baseUrl) {
+            baseUrl = req.query.baseUrl;
+        }
+        
+        // 如果有基础URL，构建完整的资源URL
+        if (baseUrl) {
+            try {
+                // 解析基础URL
+                const parsedBaseUrl = new URL(baseUrl);
+                
+                // 构建资源的完整URL
+                originalUrl = new URL(req.path, parsedBaseUrl.origin).href;
+                console.log(`构建资源URL: ${originalUrl}`);
+            } catch (e) {
+                console.error(`构建资源URL失败: ${e.message}`);
+            }
+        }
+        
+        // 如果有直接指定的原始URL，使用它
+        if (req.query.originalUrl) {
+            originalUrl = req.query.originalUrl;
+        }
+        
+        // 如果有原始URL，尝试获取资源
+        if (originalUrl) {
+            try {
+                console.log(`从源站获取资源: ${originalUrl}`);
+                const response = await axios.get(originalUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 10000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    },
+                    validateStatus: false // 不抛出HTTP错误
+                });
+                
+                // 检查响应状态
+                if (response.status !== 200) {
+                    console.error(`源站返回非200状态码: ${response.status}`);
+                    return res.status(response.status).send(`源站返回错误: ${response.status}`);
+                }
+                
+                // 设置适当的内容类型
+                const contentType = response.headers['content-type'];
+                if (contentType) {
+                    res.set('Content-Type', contentType);
+                } else {
+                    // 根据文件扩展名设置内容类型
+                    const ext = path.extname(req.path).toLowerCase();
+                    switch (ext) {
+                        case '.js':
+                            res.set('Content-Type', 'application/javascript');
+                            break;
+                        case '.css':
+                            res.set('Content-Type', 'text/css');
+                            break;
+                        case '.json':
+                            res.set('Content-Type', 'application/json');
+                            break;
+                        case '.png':
+                            res.set('Content-Type', 'image/png');
+                            break;
+                        case '.jpg':
+                        case '.jpeg':
+                            res.set('Content-Type', 'image/jpeg');
+                            break;
+                        case '.gif':
+                            res.set('Content-Type', 'image/gif');
+                            break;
+                        case '.svg':
+                            res.set('Content-Type', 'image/svg+xml');
+                            break;
+                        case '.woff':
+                            res.set('Content-Type', 'font/woff');
+                            break;
+                        case '.woff2':
+                            res.set('Content-Type', 'font/woff2');
+                            break;
+                        case '.ttf':
+                            res.set('Content-Type', 'font/ttf');
+                            break;
+                        default:
+                            res.set('Content-Type', 'application/octet-stream');
+                    }
+                }
+                
+                // 缓存控制
+                res.set('Cache-Control', 'public, max-age=86400'); // 24小时缓存
+                
+                return res.send(response.data);
+            } catch (fetchError) {
+                console.error(`获取源站资源失败: ${fetchError.message}`);
+                return res.status(502).send(`获取源站资源失败: ${fetchError.message}`);
+            }
+        }
+        
+        // 如果无法获取资源，返回404
+        res.status(404).send('资源未找到');
+    } catch (error) {
+        console.error(`资源请求处理失败: ${error.message}`);
+        res.status(500).send('资源请求处理失败');
+    }
+}
 
 // 提供静态文件
 app.use(express.static(path.join(__dirname, 'public')));
@@ -173,13 +358,16 @@ app.get('/proxy', async (req, res) => {
         
         // 如果是HTML内容，进行处理
         if (contentType.includes('text/html')) {
-            let html = response.data.toString();
+            let html = response.data.toString('utf-8');
             const $ = cheerio.load(html);
             
             // 获取当前的炮灰域名
             const currentHost = req.isCannonFodder ? req.cannonFodderHost : req.get('host');
             const protocol = req.protocol;
             const baseUrl = `${protocol}://${currentHost}`;
+            
+            // 添加基础URL元标签，帮助解析相对URL
+            $('head').prepend(`<base href="${targetUrl}">`);
             
             // 替换所有链接为代理链接
             $('a').each((i, el) => {
@@ -205,15 +393,17 @@ app.get('/proxy', async (req, res) => {
                         // 检查资源类型
                         const ext = path.extname(absoluteUrl).toLowerCase();
                         
-                        // 对于静态资源，使用静态资源处理路由
-                        if (['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.woff', '.woff2', '.ttf', '.eot'].includes(ext)) {
-                            // 创建一个静态资源URL，包含原始URL作为参数
-                            const staticPath = `/static${new URL(absoluteUrl).pathname}?originalUrl=${encodeURIComponent(absoluteUrl)}`;
+                        // 对于静态资源，使用直接路径，并添加原始URL作为参数
+                        if (['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.json'].includes(ext)) {
+                            // 提取路径部分
+                            const urlPath = new URL(absoluteUrl).pathname;
+                            // 创建一个资源URL，包含原始URL作为参数
+                            const resourceUrl = `${urlPath}?originalUrl=${encodeURIComponent(absoluteUrl)}&baseUrl=${encodeURIComponent(targetUrl)}`;
                             
                             if ($(el).attr('src')) {
-                                $(el).attr('src', staticPath);
+                                $(el).attr('src', resourceUrl);
                             } else {
-                                $(el).attr('href', staticPath);
+                                $(el).attr('href', resourceUrl);
                             }
                         } else {
                             // 其他资源使用代理
@@ -256,6 +446,8 @@ app.get('/proxy', async (req, res) => {
                 
                 // 压缩HTML
                 html = $.html().replace(/\s+/g, ' ').trim();
+            } else {
+                html = $.html();
             }
             
             // 设置响应头
