@@ -1205,19 +1205,20 @@
                 // 构建代理URL
                 const proxyUrl = `/proxy?url=${encodeURIComponent(url)}${proxyParams}`;
                 
-                // 调用短链接API
-                const shortUrlResponse = await fetch(`https://url.hdgxl.com/api.php?url=${encodeURIComponent(proxyUrl)}`);
+                // 调用985.so的短链接API
+                const apiKey = 'yourkey'; // 这里需要替换为实际的API key
+                const shortUrlResponse = await fetch(`http://api.985.so/api.php?format=json&url=${encodeURIComponent(proxyUrl)}&apikey=${apiKey}`);
                 const shortUrlData = await shortUrlResponse.json();
                 
-                if (shortUrlData.code === 0) {
+                if (shortUrlData.error) {
                     // 显示错误信息
-                    showError(shortUrlData.msg || '生成短链接失败');
+                    showError(shortUrlData.error || '生成短链接失败');
                     return;
                 }
                 
                 // 显示生成的短链接
-                if (persistentLinkInput) {
-                    persistentLinkInput.value = shortUrlData.url || shortUrlData.result;
+                if (persistentLinkInput && shortUrlData.url) {
+                    persistentLinkInput.value = shortUrlData.url;
                 }
                 
                 if (persistentLinkContainer) {
