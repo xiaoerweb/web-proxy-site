@@ -3,30 +3,15 @@ const cors = require('cors');
 const path = require('path');
 const bodyParser = require('body-parser');
 const axios = require('axios');
-const NodeCache = require('node-cache');
-const cheerio = require('cheerio');
-const zlib = require('zlib');
-const { minify } = require('terser');
-const CleanCSS = require('clean-css');
-const sharp = require('sharp');
-const crypto = require('crypto');
 const url = require('url');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 创建一个缓存实例，用于存储优化后的资源
-const resourceCache = new NodeCache({ stdTTL: 3600, checkperiod: 300 });
-// 会话缓存，用于存储会话信息，7天过期时间
-const sessionCache = new NodeCache({ stdTTL: 7 * 24 * 60 * 60, checkperiod: 3600 });
-
-// 炮灰域名配置
-const CANNON_FODDER_DOMAIN = process.env.CANNON_FODDER_DOMAIN || '4is.cc';
-
 // 启用CORS，添加更多选项
 app.use(cors({
     origin: function(origin, callback) {
-        // 允许所有域名访问，包括炮灰域名
+        // 允许所有域名访问
         callback(null, true);
     },
     credentials: true,
@@ -54,149 +39,53 @@ app.use((req, res, next) => {
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// 炮灰域名中间件
-app.use((req, res, next) => {
-    // 检查主机是否是炮灰域名
-    const host = req.hostname || '';
-    if (host.endsWith(CANNON_FODDER_DOMAIN) && host !== CANNON_FODDER_DOMAIN) {
-        console.log(`检测到炮灰域名请求: ${host}`);
-        req.isCannonFodder = true;
-        req.cannonFodderHost = host;
-    }
-    next();
-});
+// 添加随机User-Agent生成器
+const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36'
+];
+
+// 添加随机Referer生成器
+const referers = [
+    'https://www.google.com/',
+    'https://www.bing.com/',
+    'https://www.baidu.com/',
+    'https://www.yahoo.com/',
+    'https://duckduckgo.com/'
+];
+
+// 生成随机IP
+function generateRandomIP() {
+    return Array.from({length: 4}, () => Math.floor(Math.random() * 256)).join('.');
+}
+
+// 生成随机时间戳
+function generateRandomTimestamp() {
+    const now = Date.now();
+    return now - Math.floor(Math.random() * 86400000); // 随机减去0-24小时的毫秒数
+}
+
+// 提供静态文件
+app.use(express.static(path.join(__dirname, 'public')));
 
 // 处理静态资源请求
-app.get('/static/*', async (req, res, next) => {
+app.get(['/static/*', '/*.js', '/*.css', '/*.json', '/*.png', '/*.jpg', '/*.jpeg', '/*.gif', '/*.svg', '/*.woff', '/*.woff2', '/*.ttf'], async (req, res) => {
     try {
-        console.log(`处理静态资源请求: ${req.path}`);
-        
-        // 检查请求是否来自炮灰域名
-        if (!req.isCannonFodder) {
-            // 如果不是炮灰域名请求，使用本地静态文件
-            return next();
-        }
-        
-        // 尝试从本地获取静态资源
-        const localPath = path.join(__dirname, 'public', req.path);
-        
-        // 检查文件是否存在
-        try {
-            if (require('fs').existsSync(localPath)) {
-                console.log(`提供本地静态资源: ${localPath}`);
-                return res.sendFile(localPath);
-            }
-        } catch (err) {
-            console.error(`检查本地文件失败: ${err.message}`);
-        }
-        
-        // 如果请求包含原始URL（用于代理），尝试从源站获取
-        const originalUrl = req.query.originalUrl;
-        if (originalUrl) {
-            console.log(`从源站获取静态资源: ${originalUrl}`);
-            try {
-                const response = await axios.get(originalUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 10000,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    },
-                    validateStatus: false // 不抛出HTTP错误
-                });
-                
-                // 检查响应状态
-                if (response.status !== 200) {
-                    console.error(`源站返回非200状态码: ${response.status}`);
-                    return res.status(response.status).send(`源站返回错误: ${response.status}`);
-                }
-                
-                // 设置适当的内容类型
-                const contentType = response.headers['content-type'];
-                if (contentType) {
-                    res.set('Content-Type', contentType);
-                } else {
-                    // 根据文件扩展名设置内容类型
-                    const ext = path.extname(req.path).toLowerCase();
-                    switch (ext) {
-                        case '.js':
-                            res.set('Content-Type', 'application/javascript');
-                            break;
-                        case '.css':
-                            res.set('Content-Type', 'text/css');
-                            break;
-                        case '.png':
-                            res.set('Content-Type', 'image/png');
-                            break;
-                        case '.jpg':
-                        case '.jpeg':
-                            res.set('Content-Type', 'image/jpeg');
-                            break;
-                        case '.gif':
-                            res.set('Content-Type', 'image/gif');
-                            break;
-                        case '.svg':
-                            res.set('Content-Type', 'image/svg+xml');
-                            break;
-                        case '.json':
-                            res.set('Content-Type', 'application/json');
-                            break;
-                        case '.woff':
-                            res.set('Content-Type', 'font/woff');
-                            break;
-                        case '.woff2':
-                            res.set('Content-Type', 'font/woff2');
-                            break;
-                        case '.ttf':
-                            res.set('Content-Type', 'font/ttf');
-                            break;
-                        default:
-                            res.set('Content-Type', 'application/octet-stream');
-                    }
-                }
-                
-                // 缓存控制
-                res.set('Cache-Control', 'public, max-age=86400'); // 24小时缓存
-                
-                return res.send(response.data);
-            } catch (fetchError) {
-                console.error(`获取源站资源失败: ${fetchError.message}`);
-                return res.status(502).send(`获取源站资源失败: ${fetchError.message}`);
-            }
-        }
-        
-        // 如果无法获取资源，返回404
-        res.status(404).send('静态资源未找到');
-    } catch (error) {
-        console.error(`静态资源请求处理失败: ${error.message}`);
-        res.status(500).send('静态资源请求处理失败');
-    }
-});
-
-// 添加对根路径下的JS、CSS和其他静态资源的处理
-app.get('/*.js', handleDirectResourceRequest);
-app.get('/*.css', handleDirectResourceRequest);
-app.get('/*.json', handleDirectResourceRequest);
-app.get('/*.png', handleDirectResourceRequest);
-app.get('/*.jpg', handleDirectResourceRequest);
-app.get('/*.jpeg', handleDirectResourceRequest);
-app.get('/*.gif', handleDirectResourceRequest);
-app.get('/*.svg', handleDirectResourceRequest);
-app.get('/*.woff', handleDirectResourceRequest);
-app.get('/*.woff2', handleDirectResourceRequest);
-app.get('/*.ttf', handleDirectResourceRequest);
-
-// 处理直接资源请求的函数
-async function handleDirectResourceRequest(req, res) {
-    try {
-        // 检查请求是否来自炮灰域名
-        if (!req.isCannonFodder) {
-            return res.status(404).send('资源未找到');
-        }
-        
-        console.log(`处理直接资源请求: ${req.path}`);
+        console.log(`处理资源请求: ${req.path}`);
         
         // 尝试从本地获取资源
-        const localPath = path.join(__dirname, 'public', req.path);
+        let localPath;
+        if (req.path.startsWith('/static/')) {
+            // 处理/static/路径下的资源
+            localPath = path.join(__dirname, 'public', req.path.replace(/^\/static\//, ''));
+        } else {
+            // 处理根路径下的资源
+            localPath = path.join(__dirname, 'public', req.path);
+        }
+        console.log(`尝试本地路径: ${localPath}`);
         
         // 检查文件是否存在
         try {
@@ -240,7 +129,12 @@ async function handleDirectResourceRequest(req, res) {
                 const parsedBaseUrl = new URL(baseUrl);
                 
                 // 构建资源的完整URL
-                originalUrl = new URL(req.path, parsedBaseUrl.origin).href;
+                let resourcePath = req.path;
+                if (req.path.startsWith('/static/')) {
+                    resourcePath = req.path.replace(/^\/static\//, '/');
+                }
+                
+                originalUrl = new URL(resourcePath, parsedBaseUrl.origin).href;
                 console.log(`构建资源URL: ${originalUrl}`);
             } catch (e) {
                 console.error(`构建资源URL失败: ${e.message}`);
@@ -256,14 +150,102 @@ async function handleDirectResourceRequest(req, res) {
         if (originalUrl) {
             try {
                 console.log(`从源站获取资源: ${originalUrl}`);
-                const response = await axios.get(originalUrl, {
+                
+                // 设置请求选项
+                const requestOptions = {
                     responseType: 'arraybuffer',
                     timeout: 10000,
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+                        'Accept': '*/*',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Connection': 'keep-alive',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
                     },
-                    validateStatus: false // 不抛出HTTP错误
-                });
+                    validateStatus: false,
+                    // 忽略SSL证书验证
+                    httpsAgent: new (require('https').Agent)({
+                        rejectUnauthorized: false
+                    })
+                };
+                
+                // 如果提供了代理IP和端口，配置代理
+                const proxyIp = req.query.proxyIp;
+                const proxyPort = req.query.proxyPort;
+                const proxyProtocol = req.query.proxyProtocol || 'http';
+                
+                if (proxyIp && proxyPort) {
+                    console.log(`使用自定义代理获取资源: ${proxyProtocol}://${proxyIp}:${proxyPort}`);
+                    
+                    try {
+                        // 使用tunnel代理
+                        const tunnel = require('tunnel');
+                        const parsedUrl = new URL(originalUrl);
+                        
+                        // 根据目标URL和代理协议选择合适的代理方法
+                        if (parsedUrl.protocol === 'https:') {
+                            if (proxyProtocol === 'http') {
+                                requestOptions.httpsAgent = tunnel.httpsOverHttp({
+                                    proxy: {
+                                        host: proxyIp,
+                                        port: parseInt(proxyPort, 10)
+                                    },
+                                    rejectUnauthorized: false
+                                });
+                            } else if (proxyProtocol === 'https') {
+                                requestOptions.httpsAgent = tunnel.httpsOverHttps({
+                                    proxy: {
+                                        host: proxyIp,
+                                        port: parseInt(proxyPort, 10),
+                                        rejectUnauthorized: false
+                                    },
+                                    rejectUnauthorized: false
+                                });
+                            }
+                        } else {
+                            if (proxyProtocol === 'http') {
+                                requestOptions.httpAgent = tunnel.httpOverHttp({
+                                    proxy: {
+                                        host: proxyIp,
+                                        port: parseInt(proxyPort, 10)
+                                    }
+                                });
+                            } else if (proxyProtocol === 'https') {
+                                requestOptions.httpAgent = tunnel.httpOverHttps({
+                                    proxy: {
+                                        host: proxyIp,
+                                        port: parseInt(proxyPort, 10),
+                                        rejectUnauthorized: false
+                                    }
+                                });
+                            }
+                        }
+                    } catch (proxyError) {
+                        console.error('设置资源代理失败:', proxyError);
+                    }
+                }
+                
+                // 发送请求
+                let response;
+                try {
+                    response = await axios.get(originalUrl, requestOptions);
+                } catch (requestError) {
+                    console.error('资源请求失败，尝试直接请求:', requestError.message);
+                    
+                    // 移除代理设置
+                    delete requestOptions.httpAgent;
+                    delete requestOptions.httpsAgent;
+                    
+                    // 重新设置HTTPS代理，但禁用证书验证
+                    requestOptions.httpsAgent = new (require('https').Agent)({
+                        rejectUnauthorized: false
+                    });
+                    
+                    // 重试请求
+                    response = await axios.get(originalUrl, requestOptions);
+                }
                 
                 // 检查响应状态
                 if (response.status !== 200) {
@@ -315,8 +297,13 @@ async function handleDirectResourceRequest(req, res) {
                     }
                 }
                 
-                // 缓存控制
-                res.set('Cache-Control', 'public, max-age=86400'); // 24小时缓存
+                // 设置CORS和缓存头
+                res.set({
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Cache-Control': 'public, max-age=86400'
+                });
                 
                 return res.send(response.data);
             } catch (fetchError) {
@@ -326,30 +313,20 @@ async function handleDirectResourceRequest(req, res) {
         }
         
         // 如果无法获取资源，返回404
+        console.error(`资源未找到: ${req.path}`);
         res.status(404).send('资源未找到');
     } catch (error) {
         console.error(`资源请求处理失败: ${error.message}`);
         res.status(500).send('资源请求处理失败');
     }
-}
-
-// 提供静态文件
-app.use(express.static(path.join(__dirname, 'public')));
-
-// 新增：生成随机炮灰域名
-app.get('/api/cannon-fodder-domain', (req, res) => {
-    const randomPrefix = Math.random().toString(36).substring(2, 10);
-    const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
-    
-    res.json({
-        success: true,
-        domain: cannonFodderHost
-    });
 });
 
 // 代理请求处理
 app.get('/proxy', async (req, res) => {
     const targetUrl = req.query.url;
+    const proxyIp = req.query.proxyIp;
+    const proxyPort = req.query.proxyPort;
+    const proxyProtocol = req.query.proxyProtocol || 'http';
     
     if (!targetUrl) {
         return res.status(400).json({ error: '请提供目标URL' });
@@ -380,309 +357,175 @@ app.get('/proxy', async (req, res) => {
         const requestOptions = {
             timeout: 30000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Host': parsedUrl.host,
-                'Referer': parsedUrl.origin,
-                'Origin': parsedUrl.origin
+                // 随机选择User-Agent
+                'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+                // 随机选择Referer
+                'Referer': referers[Math.floor(Math.random() * referers.length)],
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                // 添加随机IP作为X-Forwarded-For
+                'X-Forwarded-For': generateRandomIP(),
+                // 添加随机时间戳
+                'If-Modified-Since': new Date(generateRandomTimestamp()).toUTCString(),
+                'DNT': '1',
+                'Host': parsedUrl.host
             },
             validateStatus: false,
             maxRedirects: 5,
-            responseType: 'arraybuffer'
+            responseType: 'arraybuffer',
+            decompress: true,
+            // 忽略SSL证书验证
+            httpsAgent: new (require('https').Agent)({
+                rejectUnauthorized: false
+            })
         };
+
+        // 如果提供了代理IP和端口，配置代理
+        if (proxyIp && proxyPort) {
+            console.log(`使用自定义代理: ${proxyProtocol}://${proxyIp}:${proxyPort}`);
+            
+            // 使用直接的代理配置方式
+            try {
+                // 使用tunnel代理
+                const tunnel = require('tunnel');
+                
+                // 根据目标URL和代理协议选择合适的代理方法
+                if (parsedUrl.protocol === 'https:') {
+                    if (proxyProtocol === 'http') {
+                        // HTTPS目标通过HTTP代理
+                        requestOptions.httpsAgent = tunnel.httpsOverHttp({
+                            proxy: {
+                                host: proxyIp,
+                                port: parseInt(proxyPort, 10)
+                            },
+                            rejectUnauthorized: false
+                        });
+                    } else if (proxyProtocol === 'https') {
+                        // HTTPS目标通过HTTPS代理
+                        requestOptions.httpsAgent = tunnel.httpsOverHttps({
+                            proxy: {
+                                host: proxyIp,
+                                port: parseInt(proxyPort, 10),
+                                rejectUnauthorized: false
+                            },
+                            rejectUnauthorized: false
+                        });
+                    }
+                } else {
+                    if (proxyProtocol === 'http') {
+                        // HTTP目标通过HTTP代理
+                        requestOptions.httpAgent = tunnel.httpOverHttp({
+                            proxy: {
+                                host: proxyIp,
+                                port: parseInt(proxyPort, 10)
+                            }
+                        });
+                    } else if (proxyProtocol === 'https') {
+                        // HTTP目标通过HTTPS代理
+                        requestOptions.httpAgent = tunnel.httpOverHttps({
+                            proxy: {
+                                host: proxyIp,
+                                port: parseInt(proxyPort, 10),
+                                rejectUnauthorized: false
+                            }
+                        });
+                    }
+                }
+                
+                // 添加代理相关头信息
+                requestOptions.headers['Proxy-Connection'] = 'keep-alive';
+                
+                console.log(`代理设置完成: ${proxyProtocol}://${proxyIp}:${proxyPort} 目标: ${parsedUrl.protocol}//${parsedUrl.host}`);
+            } catch (proxyError) {
+                console.error('设置代理失败:', proxyError);
+                // 如果代理设置失败，继续尝试不使用代理
+            }
+        }
+        
+        // 添加随机延迟 (减少延迟时间，避免请求超时)
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+        
+        console.log(`发送代理请求到: ${targetUrl}`);
         
         // 发送请求
-        const response = await axios.get(targetUrl, requestOptions);
-        
-        // 获取响应类型
-        const contentType = response.headers['content-type'] || '';
-        
-        // 设置CORS头
-        res.set('Access-Control-Allow-Origin', '*');
-        res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-        res.set('Access-Control-Allow-Credentials', 'true');
-        
-        // 如果是HTML内容，进行处理
-        if (contentType.includes('text/html')) {
-            // 尝试检测正确的字符编码
-            let encoding = 'utf-8';
-            const contentTypeHeader = response.headers['content-type'] || '';
-            const charsetMatch = contentTypeHeader.match(/charset=([^;]+)/i);
-            if (charsetMatch && charsetMatch[1]) {
-                encoding = charsetMatch[1];
-            }
+        let response;
+        try {
+            response = await axios.get(targetUrl, requestOptions);
+            console.log(`收到响应，状态码: ${response.status}, 内容类型: ${response.headers['content-type']}`);
+        } catch (requestError) {
+            // 如果请求失败，尝试不使用代理直接请求
+            console.error('代理请求失败，尝试直接请求:', requestError.message);
             
-            // 使用检测到的编码解码响应数据
-            let html = '';
+            // 移除代理设置
+            delete requestOptions.httpAgent;
+            delete requestOptions.httpsAgent;
+            
+            // 重新设置HTTPS代理，但禁用证书验证
+            requestOptions.httpsAgent = new (require('https').Agent)({
+                rejectUnauthorized: false
+            });
+            
+            // 重试请求
             try {
-                html = response.data.toString(encoding);
-            } catch (e) {
-                console.warn(`使用 ${encoding} 解码失败，回退到 utf-8: ${e.message}`);
-                html = response.data.toString('utf-8');
+                response = await axios.get(targetUrl, requestOptions);
+                console.log(`直接请求成功，状态码: ${response.status}`);
+            } catch (retryError) {
+                throw new Error(`代理和直接请求都失败: ${retryError.message}`);
             }
-            
-            // 修复可能的HTML语法错误
-            html = html.replace(/<script>document\.write\(/g, '<script>try{document.write(')
-                       .replace(/\)<\/script>/g, ')}catch(e){console.error(e);}</script>');
-            
-            // 修复其他常见语法错误
-            html = html.replace(/if\s*\(\s*\w+\s*\)\s*\{\s*\}/g, 'if(false){}')
-                       .replace(/for\s*\(\s*;\s*;\s*\)\s*\{\s*\}/g, 'for(;;){}');
-            
-            const $ = cheerio.load(html);
-            
-            // 获取当前的主机名
-            const currentHost = req.get('host');
-            const protocol = req.protocol;
-            const baseUrl = `${protocol}://${currentHost}`;
-            
-            // 添加基础URL元标签，帮助解析相对URL
-            $('head').prepend(`<base href="${targetUrl}">`);
-            
-            // 添加CSP策略，允许加载资源
-            $('head').prepend(`<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">`);
-            
-            // 添加Vue.js路由支持的meta标签
-            $('head').append(`
-                <script>
-                    // 初始化全局变量
-                    window.LA = window.LA || {};
-                    window.LA.meta = window.LA.meta || {};
-                    
-                    // 处理路由
-                    window.addEventListener('load', function() {
-                        if (window.Vue && window.VueRouter) {
-                            const router = window.VueRouter;
-                            const originalPush = router.prototype.push;
-                            const originalReplace = router.prototype.replace;
-                            
-                            // 重写路由方法，处理跨域问题
-                            router.prototype.push = function(location) {
-                                try {
-                                    return originalPush.call(this, location).catch(err => err);
-                                } catch (err) {
-                                    console.warn('Router push error:', err);
-                                    return Promise.resolve(err);
-                                }
-                            };
-                            
-                            router.prototype.replace = function(location) {
-                                try {
-                                    return originalReplace.call(this, location).catch(err => err);
-                                } catch (err) {
-                                    console.warn('Router replace error:', err);
-                                    return Promise.resolve(err);
-                                }
-                            };
-                        }
-                    });
-                </script>
-            `);
-            
-            // 替换所有链接为代理链接
-            $('a').each((i, el) => {
-                const href = $(el).attr('href');
-                if (href) {
-                    try {
-                        const absoluteUrl = new URL(href, targetUrl).href;
-                        const proxyUrl = `${baseUrl}/proxy?url=${encodeURIComponent(absoluteUrl)}`;
-                        $(el).attr('href', proxyUrl);
-                    } catch (e) {
-                        // 忽略无效的URL
-                    }
-                }
-            });
-            
-            // 替换所有资源链接
-            $('img, script, link[rel="stylesheet"], source').each((i, el) => {
-                const src = $(el).attr('src') || $(el).attr('href');
-                if (src) {
-                    try {
-                        // 构建绝对URL
-                        const absoluteUrl = new URL(src, targetUrl).href;
-                        
-                        // 确保我们不会创建指向原始网站代理路径的URL
-                        if (absoluteUrl.includes('/proxy?url=')) {
-                            console.log(`跳过已经是代理URL的资源: ${absoluteUrl}`);
-                            return;
-                        }
-                        
-                        // 创建我们自己的代理URL，使用完整的基础URL
-                        const proxyUrl = `${baseUrl}/proxy?url=${encodeURIComponent(absoluteUrl)}`;
-                        
-                        if ($(el).attr('src')) {
-                            $(el).attr('src', proxyUrl);
-                            // 对于JavaScript文件，添加crossorigin属性
-                            if (path.extname(absoluteUrl).toLowerCase() === '.js') {
-                                $(el).attr('crossorigin', 'anonymous');
-                            }
-                        } else {
-                            $(el).attr('href', proxyUrl);
-                        }
-                    } catch (e) {
-                        console.error(`处理资源链接失败: ${e.message}`);
-                    }
-                }
-            });
-            
-            // 添加过滤和优化
-            if (req.query.removeAds === 'true') {
-                $('ins, .adsbygoogle, .ad, [class*="ad-"], [id*="ad-"]').remove();
-            }
-            
-            if (req.query.removeTrackers === 'true') {
-                $('script[src*="analytics"], script[src*="tracking"], script[src*="pixel"]').remove();
-            }
-            
-            if (req.query.removeSensitive === 'true') {
-                $('form, input[type="password"], input[type="email"]').remove();
-            }
-            
-            if (req.query.addWarning === 'true') {
-                $('body').prepend('<div style="background: #fff3cd; color: #856404; padding: 1rem; margin: 1rem; border-radius: 4px; text-align: center;">⚠️ 您正在通过代理访问此网站。请注意信息安全，不要输入敏感信息。</div>');
-            }
-            
-            // 优化内容
-            if (req.query.optimize === 'true') {
-                // 延迟加载图片
-                $('img').attr('loading', 'lazy');
-                
-                // 压缩HTML
-                html = $.html().replace(/\s+/g, ' ').trim();
-            } else {
-                html = $.html();
-            }
-            
-            // 设置响应头
-            res.set('Content-Type', 'text/html; charset=utf-8');
-            res.send(html);
-        } else {
-            // 非HTML内容直接转发
-            res.set('Content-Type', contentType);
-            res.send(response.data);
         }
+        
+        // 设置响应头
+        res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Credentials': 'true',
+            'X-Frame-Options': 'SAMEORIGIN',
+            'X-Content-Type-Options': 'nosniff',
+            'X-XSS-Protection': '1; mode=block',
+            'Referrer-Policy': 'no-referrer',
+            'Feature-Policy': "microphone 'none'; camera 'none'",
+            'Permissions-Policy': "microphone=(), camera=()",
+            // 随机生成ETag
+            'ETag': `"${Math.random().toString(36).substring(7)}"`,
+            // 设置缓存控制
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
+
+        // 获取内容类型
+        let contentType = response.headers['content-type'] || 'text/html';
+        res.set('Content-Type', contentType);
+        
+        // 直接返回响应数据，不做任何处理
+        return res.send(response.data);
+        
     } catch (error) {
-        console.error('请求失败:', error);
-        res.status(500).json({
-            error: '请求失败',
-            message: error.message,
-            url: targetUrl
-        });
+        console.error(`代理请求失败: ${error.message}`);
+        return res.status(502).send(`代理请求失败: ${error.message}`);
     }
 });
 
-// 新增：生成代理链接
-app.post('/api/create-link', async (req, res) => {
-    try {
-        const { url, removeAds, removeTrackers, removeSensitive, addWarning, optimize } = req.body;
-        
-        if (!url) {
-            return res.status(400).json({ error: '请提供目标URL' });
-        }
-        
-        // 创建会话
-        const session = createProxySession({
-            removeAds,
-            removeTrackers,
-            removeSensitive,
-            addWarning,
-            optimize
-        });
-        
-        // 生成随机炮灰域名
-        const randomPrefix = Math.random().toString(36).substring(2, 10);
-        const cannonFodderHost = `${randomPrefix}.${CANNON_FODDER_DOMAIN}`;
-        
-        // 构建代理链接，使用炮灰域名
-        const proxyUrl = `${req.protocol}://${cannonFodderHost}/s/${session.id}?url=${encodeURIComponent(url)}`;
-        
-        res.json({
-            success: true,
-            sessionId: session.id,
-            proxyUrl,
-            expiresAt: session.expiresAt
-        });
-    } catch (error) {
-        console.error('创建代理链接失败:', error);
-        res.status(500).json({
-            error: '创建代理链接失败',
-            message: error.message
-        });
-    }
+// 健康检查端点
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', message: '服务正常运行' });
 });
 
-// 新增：会话代理路由
-app.get('/s/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-    const { url } = req.query;
-    
-    if (!url) {
-        return res.status(400).json({ error: '请提供目标URL' });
-    }
-    
-    // 获取会话
-    const session = getProxySession(sessionId);
-    if (!session) {
-        return res.status(404).json({ error: '会话已过期或不存在' });
-    }
-    
-    // 检查会话是否过期
-    if (session.expiresAt < Date.now()) {
-        sessionCache.del(sessionId);
-        return res.status(410).json({ error: '会话已过期' });
-    }
-    
-    // 构建代理URL
-    const proxyUrl = `/proxy?url=${encodeURIComponent(url)}`;
-    
-    // 添加会话中的过滤和优化选项
-    if (session.settings.removeAds) proxyUrl += '&removeAds=true';
-    if (session.settings.removeTrackers) proxyUrl += '&removeTrackers=true';
-    if (session.settings.removeSensitive) proxyUrl += '&removeSensitive=true';
-    if (session.settings.addWarning) proxyUrl += '&addWarning=true';
-    if (session.settings.optimize) proxyUrl += '&optimize=true';
-    
-    // 重定向到代理URL
-    res.redirect(proxyUrl);
-});
-
-// 新增：生成唯一会话ID
-function generateSessionId() {
-    return crypto.randomBytes(16).toString('hex');
-}
-
-// 新增：创建代理会话
-function createProxySession(settings) {
-    const sessionId = generateSessionId();
-    const expiresAt = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7天后过期
-    
-    const session = {
-        id: sessionId,
-        createdAt: Date.now(),
-        expiresAt: expiresAt,
-        settings: {
-            removeAds: settings.removeAds || false,
-            removeTrackers: settings.removeTrackers || false,
-            removeSensitive: settings.removeSensitive || false,
-            addWarning: settings.addWarning || false,
-            optimize: settings.optimize || false
-        }
-    };
-    
-    // 存储会话
-    sessionCache.set(sessionId, session);
-    
-    return session;
-}
-
-// 新增：获取会话信息
-function getProxySession(sessionId) {
-    if (!sessionId) return null;
-    return sessionCache.get(sessionId);
-}
-
+// 启动服务器
 app.listen(PORT, () => {
     console.log(`服务器运行在端口 ${PORT}`);
-}); 
+});
+
+// 生成会话ID
+function generateSessionId() {
+    return crypto.randomBytes(16).toString('hex');
+} 
