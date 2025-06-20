@@ -17,7 +17,7 @@ global.lastProxyUrl = null;
 const ALLOWED_DOMAINS = [
     'localhost',
     '127.0.0.1',
-    '88app.xyz', // 您的主域名
+    'www.xiekeji.com', // 您的主域名
     'proxy.yoursite.com', // 您的子域名
     // 添加其他授权域名
 ];
@@ -225,173 +225,34 @@ function generateRandomTimestamp() {
 // 提供静态文件
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 域名检测中间件
+// 域名和路径访问控制
 app.use((req, res, next) => {
     const host = req.hostname || req.headers.host;
-    
-    // 检查是否是炮灰域名 (xxx.4is.cc)
-    if (host.endsWith('.4is.cc')) {
-        // 如果是API请求，转换为代理请求
-        if (req.path.startsWith('/api/')) {
-            console.log('检测到炮灰域名的API请求:', req.path);
-            
-            // 从原始URL获取代理参数
-            const originalUrl = req.originalUrl || req.url;
-            const referer = req.headers.referer || '';
-            let targetDomain = '';
-            let proxyParams = '';
-            
-            // 尝试从当前URL中获取目标域名和代理参数
-            const currentUrl = `${req.protocol}://${host}${req.originalUrl}`;
-            try {
-                const currentUrlObj = new URL(currentUrl);
-                const pathSegments = currentUrlObj.pathname.split('/');
-                const subdomain = host.replace('.4is.cc', '');
-                
-                // 从当前页面URL中获取目标URL
-                if (req.headers.referer) {
-                    const refererUrl = new URL(req.headers.referer);
-                    const urlParams = new URLSearchParams(refererUrl.search);
-                    const targetUrl = urlParams.get('url');
-                    if (targetUrl) {
-                        targetDomain = new URL(targetUrl).origin;
-                        
-                        // 收集代理参数
-                        if (urlParams.get('proxyIp')) {
-                            proxyParams = '&' + ['proxyProtocol', 'proxyIp', 'proxyPort']
-                                .filter(param => urlParams.get(param))
-                                .map(param => `${param}=${encodeURIComponent(urlParams.get(param))}`)
-                                .join('&');
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('解析URL失败:', e);
-            }
-            
-            // 如果还是无法获取目标域名，使用默认域名
-            if (!targetDomain) {
-                targetDomain = 'https://wwew.ebayops.com';
-                console.log('使用默认目标域名:', targetDomain);
-            }
-            
-            // 构建API URL
-            const apiUrl = `${targetDomain}${req.path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
-            console.log('构建API URL:', apiUrl);
-            
-            // 构建代理URL
-            const proxyUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
-            console.log('构建代理URL:', proxyUrl);
-            
-            // 修改请求
-            req.url = proxyUrl;
-            req.originalUrl = proxyUrl;
-            
-            // 保存原始请求信息
-            req.originalMethod = req.method;
-            req.originalBody = req.body;
-            req.apiRedirected = true;
-            
-            console.log('请求已重定向:', {
-                原始URL: originalUrl,
-                目标域名: targetDomain,
-                API路径: req.path,
-                代理URL: proxyUrl,
-                代理参数: proxyParams
-            });
+    // 允许访问的平台主域名白名单
+    const isAllowed = ALLOWED_DOMAINS.some(domain => host === domain || host.endsWith('.' + domain));
+
+    // 炮灰域名：只允许/proxy、/api、/static
+    if (host.endsWith('.65tp.com')) {
+        if (
+            req.path.startsWith('/proxy') ||
+            req.path.startsWith('/api') ||
+            req.path.startsWith('/static')
+        ) {
+            return next();
         }
-        
-        // 炮灰域名允许访问 /proxy 和 /api 路径
-        if (!req.path.startsWith('/proxy') && !req.path.startsWith('/api') && !req.path.startsWith('/static')) {
-            return res.status(404).send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>404 Not Found</title>
-                    <style>
-                        body {
-                            font-family: Arial, sans-serif;
-                            background-color: #f5f5f5;
-                            color: #333;
-                            text-align: center;
-                            padding: 50px 20px;
-                            margin: 0;
-                        }
-                        .container {
-                            max-width: 600px;
-                            margin: 0 auto;
-                            background-color: #fff;
-                            padding: 30px;
-                            border-radius: 8px;
-                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                        }
-                        h1 {
-                            margin-bottom: 20px;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h1>404 Not Found</h1>
-                        <p>The requested URL was not found on this server.</p>
-                    </div>
-                </body>
-                </html>
-            `);
-        }
-        return next();
+        return res.status(404).send('Not Found');
     }
-    
-    // 对于非炮灰域名，检查是否在允许列表中
-    const isAllowed = ALLOWED_DOMAINS.some(domain => {
-        return host === domain || host.endsWith('.' + domain);
-    });
-    
-    // API请求直接允许通过（可选，如果您希望API可以被任何域名调用）
-    const isApiRequest = req.path.startsWith('/api/');
-    
-    if (!isAllowed && !isApiRequest) {
-        return res.status(404).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>404 Not Found</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        background-color: #f5f5f5;
-                        color: #333;
-                        text-align: center;
-                        padding: 50px 20px;
-                        margin: 0;
-                    }
-                    .container {
-                        max-width: 600px;
-                        margin: 0 auto;
-                        background-color: #fff;
-                        padding: 30px;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                    }
-                    h1 {
-                        margin-bottom: 20px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>404 Not Found</h1>
-                    <p>The requested URL was not found on this server.</p>
-                </div>
-            </body>
-            </html>
-        `);
+
+    // 直接访问65tp.com（无前缀）全部404
+    if (host === '65tp.com') {
+        return res.status(404).send('Not Found');
     }
-    
+
+    // 其它域名，只有白名单能访问平台前端
+    if (!isAllowed) {
+        return res.status(404).send('Not Found');
+    }
+
     next();
 });
 
@@ -400,7 +261,7 @@ app.all('*', (req, res, next) => {
     const host = req.hostname || req.headers.host;
     
     // 检查是否是炮灰域名的API请求
-    if (host.endsWith('.4is.cc') && req.path.startsWith('/api/')) {
+    if (host.endsWith('.65tp.com') && req.path.startsWith('/api/')) {
         console.log('捕获到炮灰域名API请求:', req.path);
         
         // 构建目标URL (使用默认目标域名)
