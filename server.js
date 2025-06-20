@@ -232,7 +232,7 @@ app.use((req, res, next) => {
     const isAllowed = ALLOWED_DOMAINS.some(domain => host === domain || host.endsWith('.' + domain));
 
     // 炮灰域名：只允许/proxy、/api、/static
-    if (host.endsWith('.65tp.com')) {
+    if (host.endsWith('.4is.cc')) {
         if (
             req.path.startsWith('/proxy') ||
             req.path.startsWith('/api') ||
@@ -243,8 +243,8 @@ app.use((req, res, next) => {
         return res.status(404).send('Not Found');
     }
 
-    // 直接访问65tp.com（无前缀）全部404
-    if (host === '65tp.com') {
+    // 直接访问4is.cc（无前缀）全部404
+    if (host === '4is.cc') {
         return res.status(404).send('Not Found');
     }
 
@@ -261,7 +261,7 @@ app.all('*', (req, res, next) => {
     const host = req.hostname || req.headers.host;
     
     // 检查是否是炮灰域名的API请求
-    if (host.endsWith('.65tp.com') && req.path.startsWith('/api/')) {
+    if (host.endsWith('.4is.cc') && req.path.startsWith('/api/')) {
         console.log('捕获到炮灰域名API请求:', req.path);
         
         // 构建目标URL (使用默认目标域名)
