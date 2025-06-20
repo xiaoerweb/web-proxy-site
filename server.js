@@ -17,7 +17,7 @@ global.lastProxyUrl = null;
 const ALLOWED_DOMAINS = [
     'localhost',
     '127.0.0.1',
-    'www.xiekeji.com', // 您的主域名
+    '88app.xyz', // 您的主域名
     'proxy.yoursite.com', // 您的子域名
     // 添加其他授权域名
 ];
@@ -229,8 +229,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
     const host = req.hostname || req.headers.host;
     
-    // 检查是否是炮灰域名 (xxx.65tp.com)
-    if (host.endsWith('.65tp.com')) {
+    // 检查是否是炮灰域名 (xxx.4is.cc)
+    if (host.endsWith('.4is.cc')) {
         // 如果是API请求，转换为代理请求
         if (req.path.startsWith('/api/')) {
             console.log('检测到炮灰域名的API请求:', req.path);
@@ -246,7 +246,7 @@ app.use((req, res, next) => {
             try {
                 const currentUrlObj = new URL(currentUrl);
                 const pathSegments = currentUrlObj.pathname.split('/');
-                const subdomain = host.replace('.65tp.com', '');
+                const subdomain = host.replace('.4is.cc', '');
                 
                 // 从当前页面URL中获取目标URL
                 if (req.headers.referer) {
@@ -400,7 +400,7 @@ app.all('*', (req, res, next) => {
     const host = req.hostname || req.headers.host;
     
     // 检查是否是炮灰域名的API请求
-    if (host.endsWith('.65tp.com') && req.path.startsWith('/api/')) {
+    if (host.endsWith('.4is.cc') && req.path.startsWith('/api/')) {
         console.log('捕获到炮灰域名API请求:', req.path);
         
         // 构建目标URL (使用默认目标域名)
