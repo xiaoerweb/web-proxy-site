@@ -4,9 +4,232 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ProxySite 免费网络代理</title>
+    
+    <!-- 添加早期请求拦截器 -->
+    <script>
+        // 立即执行的请求拦截器
+        (function() {
+            // 检查是否是炮灰域名
+            const currentHost = window.location.hostname;
+            if (!currentHost.endsWith('.65tp.com')) {
+                return;
+            }
+
+            // 获取URL中的代理参数
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetUrl = urlParams.get('url');
+            let proxyParams = '';
+            let targetDomain = '';
+
+            try {
+                targetDomain = new URL(targetUrl).origin;
+                if (urlParams.get('proxyIp')) {
+                    proxyParams = '&' + ['proxyProtocol', 'proxyIp', 'proxyPort']
+                        .filter(param => urlParams.get(param))
+                        .map(param => `${param}=${encodeURIComponent(urlParams.get(param))}`)
+                        .join('&');
+                }
+            } catch (e) {
+                console.error('无法解析目标URL:', e);
+                return;
+            }
+
+            // 定义全局变量存储目标信息
+            window.__PROXY_INFO__ = {
+                targetDomain,
+                proxyParams,
+                originalFetch: window.fetch,
+                originalXHR: window.XMLHttpRequest
+            };
+
+            // 重写XMLHttpRequest
+            window.XMLHttpRequest = function() {
+                const xhr = new window.__PROXY_INFO__.originalXHR();
+                const originalOpen = xhr.open;
+
+                xhr.open = function(method, url, ...args) {
+                    let finalUrl = url;
+                    if (typeof url === 'string' && url.startsWith('/api/')) {
+                        const apiUrl = window.__PROXY_INFO__.targetDomain + url;
+                        finalUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${window.__PROXY_INFO__.proxyParams}`;
+                        console.log('拦截XHR请求:', url, '->', finalUrl);
+                    }
+                    return originalOpen.call(this, method, finalUrl, ...args);
+                };
+
+                return xhr;
+            };
+
+            // 重写fetch
+            window.fetch = function(resource, init) {
+                if (typeof resource === 'string' && resource.startsWith('/api/')) {
+                    const apiUrl = window.__PROXY_INFO__.targetDomain + resource;
+                    resource = `/proxy?url=${encodeURIComponent(apiUrl)}${window.__PROXY_INFO__.proxyParams}`;
+                    console.log('拦截fetch请求:', resource);
+                }
+                return window.__PROXY_INFO__.originalFetch.call(window, resource, init);
+            };
+
+            // 创建一个定时器，定期检查并重新应用拦截器
+            setInterval(function() {
+                if (window.fetch !== window.__PROXY_INFO__.fetch) {
+                    console.log('检测到fetch被修改，重新应用拦截器');
+                    window.__PROXY_INFO__.fetch = window.fetch;
+                    window.fetch = function(resource, init) {
+                        if (typeof resource === 'string' && resource.startsWith('/api/')) {
+                            const apiUrl = window.__PROXY_INFO__.targetDomain + resource;
+                            resource = `/proxy?url=${encodeURIComponent(apiUrl)}${window.__PROXY_INFO__.proxyParams}`;
+                            console.log('拦截fetch请求:', resource);
+                        }
+                        return window.__PROXY_INFO__.originalFetch.call(window, resource, init);
+                    };
+                }
+
+                if (window.XMLHttpRequest !== window.__PROXY_INFO__.xhr) {
+                    console.log('检测到XMLHttpRequest被修改，重新应用拦截器');
+                    window.__PROXY_INFO__.xhr = window.XMLHttpRequest;
+                    window.XMLHttpRequest = function() {
+                        const xhr = new window.__PROXY_INFO__.originalXHR();
+                        const originalOpen = xhr.open;
+
+                        xhr.open = function(method, url, ...args) {
+                            let finalUrl = url;
+                            if (typeof url === 'string' && url.startsWith('/api/')) {
+                                const apiUrl = window.__PROXY_INFO__.targetDomain + url;
+                                finalUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${window.__PROXY_INFO__.proxyParams}`;
+                                console.log('拦截XHR请求:', url, '->', finalUrl);
+                            }
+                            return originalOpen.call(this, method, finalUrl, ...args);
+                        };
+
+                        return xhr;
+                    };
+                }
+            }, 100);
+
+            console.log('早期请求拦截器已安装');
+        })();
+    </script>
+    
+    <!-- 添加域名检测脚本 -->
+    <script>
+        // 域名检测函数
+        function checkDomain() {
+            // 获取当前访问的主机名
+            const currentHost = window.location.hostname;
+            
+            // 允许访问的域名列表（请替换为您的授权域名）
+            const allowedDomains = [
+                'localhost',
+                '127.0.0.1',
+                'www.xiekeji.com', // 您的主域名
+                'proxy.yoursite.com' // 您的子域名
+                // 添加其他授权域名
+            ];
+            
+            // 检查当前域名是否在允许列表中
+            const isAllowed = allowedDomains.some(domain => {
+                return currentHost === domain || currentHost.endsWith('.' + domain);
+            });
+            
+            // 如果不在允许列表中，显示错误信息
+            if (!isAllowed && currentHost !== '') {
+                // 在页面加载完成后显示错误信息
+                document.addEventListener('DOMContentLoaded', function() {
+                    // 创建错误提示元素
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'domain-error';
+                    errorDiv.innerHTML = `
+                        <h1><i class="fas fa-exclamation-triangle"></i> 访问受限</h1>
+                        <p>您正在通过未授权的域名访问本服务。</p>
+                        <p>当前域名: <strong>${currentHost}</strong></p>
+                        <p>请通过官方域名访问我们的服务。</p>
+                        <a href="https://proxysite.com" class="redirect-btn">
+                            <i class="fas fa-external-link-alt"></i> 前往官方网站
+                        </a>
+                    `;
+                    
+                    // 隐藏页面内容
+                    document.body.classList.add('hidden-content');
+                    
+                    // 添加错误提示到页面
+                    document.body.appendChild(errorDiv);
+                });
+                
+                return false;
+            }
+            
+            return true;
+        }
+        
+        // 立即执行域名检测
+        (function() {
+            if (!checkDomain()) {
+                // 如果检测失败，尝试阻止页面渲染
+                document.documentElement.style.display = 'none';
+                
+                // 尝试重定向到官方网站
+                setTimeout(function() {
+                    window.location.href = 'https://proxysite.com';
+                }, 1000);
+            }
+        })();
+    </script>
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css">
     <style>
+        /* 添加域名检测错误提示样式 */
+        .domain-error {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .domain-error h1 {
+            color: #f44336;
+            margin-bottom: 20px;
+            font-size: 2rem;
+        }
+        
+        .domain-error p {
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            max-width: 600px;
+        }
+        
+        .domain-error .redirect-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 20px;
+            text-decoration: none;
+        }
+        
+        .domain-error .redirect-btn:hover {
+            background-color: #45a049;
+        }
+        
+        /* 隐藏内容 */
+        .hidden-content {
+            display: none !important;
+        }
+        
         :root {
             --primary-color: #1e88e5;
             --secondary-color: #64b5f6;
@@ -1202,23 +1425,23 @@
                     }
                 }
                 
-                // 构建代理URL
+                // 解析目标URL
+                const targetUrlObj = new URL(url);
+                
+                // 构建代理URL - 注意：这里直接将目标URL放入查询参数中
                 const proxyUrl = `/proxy?url=${encodeURIComponent(url)}${proxyParams}`;
                 
-                // 调用985.so的短链接API
-                const apiKey = 'yourkey'; // 这里需要替换为实际的API key
-                const shortUrlResponse = await fetch(`http://api.985.so/api.php?format=json&url=${encodeURIComponent(proxyUrl)}&apikey=${apiKey}`);
-                const shortUrlData = await shortUrlResponse.json();
+                // 生成随机子域名（使用时间戳和随机字符串组合）
+                const timestamp = Date.now().toString(36);
+                const randomStr = Math.random().toString(36).substring(2, 8);
+                const subdomain = `${timestamp}${randomStr}`;
                 
-                if (shortUrlData.error) {
-                    // 显示错误信息
-                    showError(shortUrlData.error || '生成短链接失败');
-                    return;
-                }
+                // 构建炮灰域名URL - 直接访问代理路径，不允许访问主页
+                const persistentUrl = `http://${subdomain}.65tp.com${proxyUrl}`;
                 
-                // 显示生成的短链接
-                if (persistentLinkInput && shortUrlData.url) {
-                    persistentLinkInput.value = shortUrlData.url;
+                // 显示生成的链接
+                if (persistentLinkInput) {
+                    persistentLinkInput.value = persistentUrl;
                 }
                 
                 if (persistentLinkContainer) {
@@ -1230,6 +1453,65 @@
                     qrcodeContainer.innerHTML = '<div id="qrcode"></div>';
                     qrcodeContainer.classList.remove('show');
                 }
+                
+                // 添加说明文本
+                const infoElement = document.querySelector('.persistent-link-info');
+                if (infoElement) {
+                    infoElement.innerHTML = `
+                        <i class="fas fa-info-circle"></i>
+                        此链接将保持您的代理设置7天，可以直接分享给他人使用。
+                    `;
+                }
+                
+                // 添加API请求拦截器
+                const script = document.createElement('script');
+                script.textContent = `
+                    // 保存原始的fetch函数
+                    const originalFetch = window.fetch;
+                    
+                    // 重写fetch函数
+                    window.fetch = async function(resource, init) {
+                        let url = resource;
+                        if (typeof resource === 'string') {
+                            // 检查是否是API请求
+                            if (resource.startsWith('/api/')) {
+                                // 构建完整的API URL
+                                const apiUrl = new URL(resource, '${targetUrlObj.origin}').href;
+                                // 将API请求转换为代理请求
+                                url = '/proxy?url=' + encodeURIComponent(apiUrl)${proxyParams};
+                            }
+                        }
+                        return originalFetch(url, init);
+                    };
+                    
+                    // 保存原始的XMLHttpRequest.prototype.open
+                    const originalXHROpen = XMLHttpRequest.prototype.open;
+                    
+                    // 重写XMLHttpRequest.prototype.open
+                    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+                        let modifiedUrl = url;
+                        if (typeof url === 'string' && url.startsWith('/api/')) {
+                            // 构建完整的API URL
+                            const apiUrl = new URL(url, '${targetUrlObj.origin}').href;
+                            // 将API请求转换为代理请求
+                            modifiedUrl = '/proxy?url=' + encodeURIComponent(apiUrl)${proxyParams};
+                        }
+                        return originalXHROpen.call(this, method, modifiedUrl, async, user, password);
+                    };
+                    
+                    // 修改axios的baseURL（如果使用了axios）
+                    if (window.axios) {
+                        window.axios.interceptors.request.use(config => {
+                            if (config.url.startsWith('/api/')) {
+                                const apiUrl = new URL(config.url, '${targetUrlObj.origin}').href;
+                                config.url = '/proxy?url=' + encodeURIComponent(apiUrl)${proxyParams};
+                            }
+                            return config;
+                        });
+                    }
+                `;
+                document.head.appendChild(script);
+                
             } catch (error) {
                 console.error('生成链接失败:', error);
                 showError('生成链接失败: ' + error.message);
@@ -1499,6 +1781,244 @@
             getProxiesBtn.addEventListener('click', fetchProxyList);
         }
     });
+    </script>
+
+    <!-- 在body标签的最后，添加全局请求拦截器 -->
+    <script>
+        // 立即执行函数，检查并处理炮灰域名
+        (function() {
+            // 检查是否是炮灰域名
+            const currentHost = window.location.hostname;
+            if (!currentHost.endsWith('.65tp.com')) {
+                console.log('非炮灰域名，不启用请求拦截');
+                return;
+            }
+            
+            console.log('检测到炮灰域名，启用请求拦截器');
+            
+            // 获取URL中的代理参数
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetUrl = urlParams.get('url');
+            let proxyParams = '';
+            let targetDomain = '';
+            
+            // 收集所有代理相关参数
+            if (urlParams.get('proxyIp')) {
+                proxyParams = '&' + ['proxyProtocol', 'proxyIp', 'proxyPort']
+                    .filter(param => urlParams.get(param))
+                    .map(param => `${param}=${encodeURIComponent(urlParams.get(param))}`)
+                    .join('&');
+            }
+
+            // 获取目标域名
+            try {
+                targetDomain = new URL(targetUrl).origin;
+                console.log('目标域名:', targetDomain);
+            } catch (e) {
+                console.error('无法解析目标URL:', e);
+                return;
+            }
+
+            // 保存原始的XMLHttpRequest
+            const OriginalXMLHttpRequest = window.XMLHttpRequest;
+            
+            // 创建一个新的XMLHttpRequest构造函数
+            window.XMLHttpRequest = function() {
+                const xhr = new OriginalXMLHttpRequest();
+                const originalOpen = xhr.open;
+                const originalSend = xhr.send;
+                
+                xhr.open = function(method, url, ...args) {
+                    let finalUrl = url;
+                    
+                    // 检查是否是API请求
+                    if (url.includes('/api/')) {
+                        // 从URL中提取API路径
+                        let apiPath;
+                        try {
+                            const urlObj = new URL(url, window.location.origin);
+                            apiPath = urlObj.pathname + urlObj.search;
+                        } catch (e) {
+                            apiPath = url.startsWith('/') ? url : '/' + url;
+                        }
+                        
+                        // 构建完整的API URL
+                        const apiUrl = `${targetDomain}${apiPath}`;
+                        finalUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
+                        console.log('拦截到API请求:', {
+                            original: url,
+                            apiPath: apiPath,
+                            targetDomain: targetDomain,
+                            final: finalUrl
+                        });
+                    }
+                    
+                    return originalOpen.call(this, method, finalUrl, ...args);
+                };
+                
+                xhr.send = function(body) {
+                    // 如果是表单数据，确保正确处理
+                    if (body instanceof FormData) {
+                        console.log('发送FormData数据');
+                    }
+                    return originalSend.call(this, body);
+                };
+                
+                return xhr;
+            };
+            
+            // 保存原始的fetch函数
+            const originalFetch = window.fetch;
+            
+            // 重写fetch函数
+            window.fetch = function(resource, init = {}) {
+                let url = resource;
+                
+                // 检查是否是API请求
+                if (typeof resource === 'string' && resource.includes('/api/')) {
+                    // 从URL中提取API路径
+                    let apiPath;
+                    try {
+                        const urlObj = new URL(resource, window.location.origin);
+                        apiPath = urlObj.pathname + urlObj.search;
+                    } catch (e) {
+                        apiPath = resource.startsWith('/') ? resource : '/' + resource;
+                    }
+                    
+                    // 构建完整的API URL
+                    const apiUrl = `${targetDomain}${apiPath}`;
+                    url = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
+                    console.log('拦截到fetch请求:', {
+                        original: resource,
+                        apiPath: apiPath,
+                        targetDomain: targetDomain,
+                        final: url
+                    });
+                }
+                
+                // 如果是POST请求，确保正确处理Content-Type
+                if (init.method === 'POST' && init.body) {
+                    if (!init.headers) {
+                        init.headers = {};
+                    }
+                    
+                    // 如果没有设置Content-Type，并且body不是FormData，设置为application/json
+                    if (!(init.body instanceof FormData) && !init.headers['Content-Type']) {
+                        init.headers['Content-Type'] = 'application/json';
+                    }
+                }
+                
+                return originalFetch(url, init);
+            };
+            
+            // 监听表单提交
+            document.addEventListener('submit', function(e) {
+                const form = e.target;
+                if (!form.action) return;
+                
+                try {
+                    // 检查是否是API请求
+                    if (form.action.includes('/api/')) {
+                        e.preventDefault();
+                        
+                        // 从URL中提取API路径
+                        let apiPath;
+                        try {
+                            const urlObj = new URL(form.action, window.location.origin);
+                            apiPath = urlObj.pathname + urlObj.search;
+                        } catch (e) {
+                            apiPath = form.action.startsWith('/') ? form.action : '/' + form.action;
+                        }
+                        
+                        // 构建完整的API URL
+                        const apiUrl = `${targetDomain}${apiPath}`;
+                        const proxyUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
+                        
+                        console.log('拦截到表单提交:', {
+                            original: form.action,
+                            apiPath: apiPath,
+                            targetDomain: targetDomain,
+                            final: proxyUrl
+                        });
+                        
+                        // 使用fetch发送表单数据
+                        const formData = new FormData(form);
+                        fetch(proxyUrl, {
+                            method: form.method || 'POST',
+                            body: formData
+                        }).then(response => {
+                            if (form.getAttribute('data-ajax') !== 'true') {
+                                window.location.reload();
+                            }
+                        }).catch(error => {
+                            console.error('表单提交错误:', error);
+                        });
+                    }
+                } catch (e) {
+                    console.error('处理表单提交错误:', e);
+                }
+            }, true);
+
+            // 在页面加载完成后修改所有API链接
+            document.addEventListener('DOMContentLoaded', function() {
+                // 修改所有API链接
+                document.querySelectorAll('a[href^="/api/"]').forEach(link => {
+                    const href = link.getAttribute('href');
+                    const apiUrl = `${targetDomain}${href}`;
+                    const proxyUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
+                    link.setAttribute('href', proxyUrl);
+                    console.log('修改API链接:', {
+                        original: href,
+                        final: proxyUrl
+                    });
+                });
+            });
+            
+            // 使用MutationObserver监听动态添加的元素
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    mutation.addedNodes.forEach(function(node) {
+                        if (node.nodeType === 1) { // 元素节点
+                            // 处理动态添加的API链接
+                            node.querySelectorAll && node.querySelectorAll('a[href^="/api/"]').forEach(link => {
+                                const href = link.getAttribute('href');
+                                const apiUrl = `${targetDomain}${href}`;
+                                const proxyUrl = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
+                                link.setAttribute('href', proxyUrl);
+                                console.log('修改动态API链接:', {
+                                    original: href,
+                                    final: proxyUrl
+                                });
+                            });
+                        }
+                    });
+                });
+            });
+            
+            // 配置并启动观察器
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            // 修复axios baseURL
+            if (window.axios) {
+                const originalCreate = window.axios.create;
+                window.axios.create = function(config = {}) {
+                    if (config.baseURL && config.baseURL.startsWith('/api')) {
+                        const apiUrl = `${targetDomain}${config.baseURL}`;
+                        config.baseURL = `/proxy?url=${encodeURIComponent(apiUrl)}${proxyParams}`;
+                        console.log('修改axios baseURL:', {
+                            original: config.baseURL,
+                            final: config.baseURL
+                        });
+                    }
+                    return originalCreate.call(this, config);
+                };
+            }
+            
+            console.log('增强的请求拦截器已安装完成');
+        })();
     </script>
 </body>
 </html> 
